@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjAsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIn0",
+    "payload": "eyJkb21haW4iOiJub3VuLWlkbGUtZ2l0LW1haW4tZHJldy1jb2ZmbWFucy1wcm9qZWN0cy52ZXJjZWwuYXBwIn0",
+    "signature": "placeholder"
+  },
+  "frame": {
+    "version": "1",
+    "name": "Noun Coffee Idle",
+    "iconUrl": "https://noun-idle-git-main-drew-coffmans-projects.vercel.app/icon.png",
+    "homeUrl": "https://noun-idle-git-main-drew-coffmans-projects.vercel.app",
+    "imageUrl": "https://noun-idle-git-main-drew-coffmans-projects.vercel.app/og.png",
+    "buttonTitle": "Play",
+    "splashImageUrl": "https://noun-idle-git-main-drew-coffmans-projects.vercel.app/splash.png",
+    "splashBackgroundColor": "#1a1a1a",
+    "webhookUrl": "https://noun-idle-git-main-drew-coffmans-projects.vercel.app/api/webhook"
+  }
+}
