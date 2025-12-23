@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-// Game state types
+// Types
 interface Customer {
   id: number;
   order: string;
@@ -10,548 +10,527 @@ interface Customer {
   maxPatience: number;
   position: number;
   served: boolean;
-}
-
-interface Staff {
-  id: string;
-  name: string;
-  cost: number;
-  multiplier: number;
-  owned: boolean;
-  isNounExclusive?: boolean;
-  sprite: string;
-}
-
-interface Equipment {
-  id: string;
-  name: string;
-  cost: number;
-  speedBonus: number;
-  owned: boolean;
-  isNounExclusive?: boolean;
-  sprite: string;
-}
-
-interface Decoration {
-  id: string;
-  name: string;
-  cost: number;
-  bonus: number;
-  owned: boolean;
-  isNounExclusive?: boolean;
+  tip: number;
 }
 
 interface GameState {
   coins: number;
+  coinsPerSecond: number;
   totalEarned: number;
   customersServed: number;
-  combo: number;
-  maxCombo: number;
   prestigeLevel: number;
-  prestigeMultiplier: number;
-  nounBalance: number;
-  staff: Staff[];
-  equipment: Equipment[];
-  decorations: Decoration[];
-  unlockedAchievements: string[];
+  nounHolder: boolean;
+  // Upgrades
+  baristas: number;
+  machineLevel: number;
+  decorLevel: number;
+  menuItems: number;
 }
 
-const ORDERS = ['Espresso', 'Latte', 'Cappuccino', 'Americano', 'Mocha', 'Cold Brew'];
-const ORDER_EMOJIS: Record<string, string> = {
-  'Espresso': '☕',
-  'Latte': '🥛',
-  'Cappuccino': '☕',
-  'Americano': '🫖',
-  'Mocha': '🍫',
-  'Cold Brew': '🧊',
-};
-
-const INITIAL_STAFF: Staff[] = [
-  { id: 'barista1', name: 'Junior Barista', cost: 100, multiplier: 1.5, owned: false, sprite: '👨‍🍳' },
-  { id: 'barista2', name: 'Senior Barista', cost: 500, multiplier: 2, owned: false, sprite: '👩‍🍳' },
-  { id: 'barista3', name: 'Master Barista', cost: 2500, multiplier: 3, owned: false, sprite: '🧑‍🍳' },
-  { id: 'nounBarista', name: 'Noun Barista ⌐◨-◨', cost: 0, multiplier: 5, owned: false, isNounExclusive: true, sprite: '⌐◨-◨' },
-];
-
-const INITIAL_EQUIPMENT: Equipment[] = [
-  { id: 'machine1', name: 'Basic Machine', cost: 200, speedBonus: 1.2, owned: true, sprite: '⚙️' },
-  { id: 'machine2', name: 'Pro Machine', cost: 1000, speedBonus: 1.5, owned: false, sprite: '🔧' },
-  { id: 'machine3', name: 'Industrial Machine', cost: 5000, speedBonus: 2, owned: false, sprite: '🏭' },
-  { id: 'nounMachine', name: 'Golden Noun Machine', cost: 0, speedBonus: 3, owned: false, isNounExclusive: true, sprite: '✨' },
-];
-
-const INITIAL_DECORATIONS: Decoration[] = [
-  { id: 'plant', name: 'Potted Plant', cost: 50, bonus: 1.1, owned: false },
-  { id: 'art', name: 'Wall Art', cost: 150, bonus: 1.15, owned: false },
-  { id: 'neon', name: 'Neon Sign', cost: 500, bonus: 1.25, owned: false },
-  { id: 'fountain', name: 'Coffee Fountain', cost: 2000, bonus: 1.5, owned: false },
-  { id: 'nounStatue', name: 'Noun Statue ⌐◨-◨', cost: 0, bonus: 2, owned: false, isNounExclusive: true },
-];
+const BARISTA_COSTS = [50, 200, 800, 3200, 12800];
+const MACHINE_COSTS = [100, 500, 2500, 12500];
+const DECOR_COSTS = [75, 300, 1200, 4800];
+const MENU_COSTS = [150, 600, 2400, 9600];
 
 export default function CoffeeShopGame({ fid }: { fid: number }) {
   const [gameState, setGameState] = useState<GameState>({
     coins: 0,
+    coinsPerSecond: 1,
     totalEarned: 0,
     customersServed: 0,
-    combo: 0,
-    maxCombo: 0,
     prestigeLevel: 0,
-    prestigeMultiplier: 1,
-    nounBalance: 0, // Would come from blockchain
-    staff: INITIAL_STAFF,
-    equipment: INITIAL_EQUIPMENT,
-    decorations: INITIAL_DECORATIONS,
-    unlockedAchievements: [],
+    nounHolder: false,
+    baristas: 0,
+    machineLevel: 1,
+    decorLevel: 0,
+    menuItems: 1,
   });
 
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [floatingTexts, setFloatingTexts] = useState<{ id: number; text: string; x: number; y: number; color: string }[]>([]);
-  const [selectedTab, setSelectedTab] = useState<'shop' | 'staff' | 'equipment' | 'decor'>('shop');
+  const [floats, setFloats] = useState<{ id: number; value: number; x: number }[]>([]);
+  const [shopTab, setShopTab] = useState<'upgrades' | 'prestige' | 'noun'>('upgrades');
   const customerIdRef = useRef(0);
-  const floatIdRef = useRef(0);
 
-  // Calculate multipliers
-  const getEarningsMultiplier = useCallback(() => {
-    let mult = gameState.prestigeMultiplier;
-    gameState.staff.forEach(s => { if (s.owned) mult *= s.multiplier; });
-    gameState.decorations.forEach(d => { if (d.owned) mult *= d.bonus; });
-    if (gameState.nounBalance > 0) mult *= 2; // $NOUN holder bonus
-    return mult;
-  }, [gameState]);
+  // Calculate coins per second (IDLE earnings)
+  const calculateCPS = useCallback((state: GameState) => {
+    let base = 1;
+    base += state.baristas * 2; // Each barista adds 2/sec
+    base *= (1 + state.machineLevel * 0.5); // Machine multiplier
+    base *= (1 + state.decorLevel * 0.25); // Decor multiplier
+    base *= (1 + state.menuItems * 0.3); // Menu multiplier
+    base *= (1 + state.prestigeLevel * 0.5); // Prestige multiplier
+    if (state.nounHolder) base *= 2; // $NOUN 2x bonus
+    return Math.floor(base * 10) / 10;
+  }, []);
 
-  const getSpeedMultiplier = useCallback(() => {
-    let speed = 1;
-    gameState.equipment.forEach(e => { if (e.owned) speed *= e.speedBonus; });
-    return speed;
-  }, [gameState]);
-
-  // Spawn customers
+  // IDLE: Passive income every second
   useEffect(() => {
-    const spawnCustomer = () => {
-      if (customers.length >= 5) return; // Max 5 customers
+    const cps = calculateCPS(gameState);
+    const interval = setInterval(() => {
+      setGameState(prev => ({
+        ...prev,
+        coins: prev.coins + cps,
+        totalEarned: prev.totalEarned + cps,
+        coinsPerSecond: cps,
+      }));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameState.baristas, gameState.machineLevel, gameState.decorLevel, gameState.menuItems, gameState.prestigeLevel, gameState.nounHolder, calculateCPS]);
 
-      const newCustomer: Customer = {
+  // Spawn customers (visual only - they give bonus when tapped)
+  useEffect(() => {
+    const spawn = () => {
+      if (customers.length >= 4) return;
+      const customer: Customer = {
         id: customerIdRef.current++,
-        order: ORDERS[Math.floor(Math.random() * ORDERS.length)],
+        order: ['Latte', 'Espresso', 'Mocha', 'Cold Brew'][Math.floor(Math.random() * 4)],
         patience: 100,
         maxPatience: 100,
         position: customers.length,
         served: false,
+        tip: Math.floor(5 + Math.random() * 15 + gameState.menuItems * 5),
       };
-      setCustomers(prev => [...prev, newCustomer]);
+      setCustomers(prev => [...prev, customer]);
     };
-
-    const baseInterval = 3000;
-    const speed = getSpeedMultiplier();
-    const interval = setInterval(spawnCustomer, baseInterval / speed);
+    const interval = setInterval(spawn, 3000 / (1 + gameState.baristas * 0.3));
+    spawn(); // Initial customer
     return () => clearInterval(interval);
-  }, [customers.length, getSpeedMultiplier]);
+  }, [gameState.baristas, gameState.menuItems]);
+
+  // Auto-serve customers (IDLE) - baristas serve automatically
+  useEffect(() => {
+    if (gameState.baristas === 0) return;
+    const autoServe = () => {
+      setCustomers(prev => {
+        if (prev.length === 0) return prev;
+        const toServe = prev[0];
+        if (toServe.served) return prev;
+
+        // Auto-serve gives base tip (no bonus)
+        setGameState(g => ({
+          ...g,
+          coins: g.coins + toServe.tip * 0.5, // Half tip for auto
+          totalEarned: g.totalEarned + toServe.tip * 0.5,
+          customersServed: g.customersServed + 1,
+        }));
+
+        return prev.slice(1);
+      });
+    };
+    const interval = setInterval(autoServe, 4000 / gameState.baristas);
+    return () => clearInterval(interval);
+  }, [gameState.baristas]);
+
+  // Manual serve (ACTIVE bonus)
+  const serveCustomer = (id: number) => {
+    const customer = customers.find(c => c.id === id);
+    if (!customer || customer.served) return;
+
+    const bonus = customer.tip * (1 + customer.patience / 100); // Speed bonus
+    setGameState(prev => ({
+      ...prev,
+      coins: prev.coins + bonus,
+      totalEarned: prev.totalEarned + bonus,
+      customersServed: prev.customersServed + 1,
+    }));
+
+    // Float animation
+    setFloats(prev => [...prev, { id: Date.now(), value: Math.floor(bonus), x: 30 + Math.random() * 40 }]);
+    setTimeout(() => setFloats(prev => prev.slice(1)), 1000);
+
+    setCustomers(prev => prev.filter(c => c.id !== id));
+  };
 
   // Decrease patience
   useEffect(() => {
     const interval = setInterval(() => {
-      setCustomers(prev => {
-        const updated = prev.map(c => ({
-          ...c,
-          patience: Math.max(0, c.patience - 2),
-        }));
-        // Remove customers who ran out of patience
-        const remaining = updated.filter(c => c.patience > 0 || c.served);
-        if (remaining.length < updated.length) {
-          // Lost a customer, reset combo
-          setGameState(g => ({ ...g, combo: 0 }));
-        }
-        return remaining;
-      });
+      setCustomers(prev => prev.map(c => ({
+        ...c,
+        patience: Math.max(0, c.patience - 1),
+      })).filter(c => c.patience > 0));
     }, 100);
     return () => clearInterval(interval);
   }, []);
 
-  // Serve a customer
-  const serveCustomer = useCallback((customerId: number) => {
-    const customer = customers.find(c => c.id === customerId);
-    if (!customer || customer.served) return;
+  // Buy upgrades
+  const buyUpgrade = (type: 'baristas' | 'machineLevel' | 'decorLevel' | 'menuItems') => {
+    const costs = {
+      baristas: BARISTA_COSTS,
+      machineLevel: MACHINE_COSTS,
+      decorLevel: DECOR_COSTS,
+      menuItems: MENU_COSTS,
+    };
+    const level = gameState[type];
+    const cost = costs[type][level];
+    if (!cost || gameState.coins < cost) return;
 
-    // Calculate earnings based on patience (bonus for fast service)
-    const speedBonus = customer.patience / customer.maxPatience;
-    const comboBonus = 1 + (gameState.combo * 0.1);
-    const baseEarning = 10;
-    const earnings = Math.floor(baseEarning * speedBonus * comboBonus * getEarningsMultiplier());
-
-    // Update game state
     setGameState(prev => ({
       ...prev,
-      coins: prev.coins + earnings,
-      totalEarned: prev.totalEarned + earnings,
-      customersServed: prev.customersServed + 1,
-      combo: prev.combo + 1,
-      maxCombo: Math.max(prev.maxCombo, prev.combo + 1),
+      coins: prev.coins - cost,
+      [type]: prev[type] + 1,
     }));
-
-    // Mark customer as served (will animate out)
-    setCustomers(prev => prev.map(c =>
-      c.id === customerId ? { ...c, served: true } : c
-    ));
-
-    // Remove after animation
-    setTimeout(() => {
-      setCustomers(prev => prev.filter(c => c.id !== customerId));
-    }, 500);
-
-    // Floating text
-    const floatId = floatIdRef.current++;
-    const colors = earnings > 20 ? '#22c55e' : earnings > 15 ? '#eab308' : '#f97316';
-    setFloatingTexts(prev => [...prev, {
-      id: floatId,
-      text: `+${earnings}`,
-      x: 50 + Math.random() * 20,
-      y: 30,
-      color: colors,
-    }]);
-    setTimeout(() => {
-      setFloatingTexts(prev => prev.filter(f => f.id !== floatId));
-    }, 1000);
-
-  }, [customers, gameState.combo, getEarningsMultiplier]);
-
-  // Buy items
-  const buyItem = useCallback((type: 'staff' | 'equipment' | 'decorations', id: string) => {
-    setGameState(prev => {
-      const items = prev[type] as (Staff | Equipment | Decoration)[];
-      const item = items.find(i => i.id === id);
-      if (!item || item.owned) return prev;
-      if (item.isNounExclusive && prev.nounBalance <= 0) return prev;
-      if (!item.isNounExclusive && prev.coins < item.cost) return prev;
-
-      return {
-        ...prev,
-        coins: item.isNounExclusive ? prev.coins : prev.coins - item.cost,
-        [type]: items.map(i => i.id === id ? { ...i, owned: true } : i),
-      };
-    });
-  }, []);
+  };
 
   // Prestige
-  const prestige = useCallback(() => {
+  const prestige = () => {
     if (gameState.customersServed < 100) return;
-
-    const newMultiplier = 1 + (gameState.prestigeLevel + 1) * 0.5;
     setGameState(prev => ({
       ...prev,
       coins: 0,
       customersServed: 0,
-      combo: 0,
+      baristas: 0,
+      machineLevel: 1,
+      decorLevel: 0,
+      menuItems: 1,
       prestigeLevel: prev.prestigeLevel + 1,
-      prestigeMultiplier: newMultiplier,
-      staff: INITIAL_STAFF,
-      equipment: INITIAL_EQUIPMENT,
-      decorations: INITIAL_DECORATIONS.map(d => d.isNounExclusive && prev.nounBalance > 0 ? { ...d, owned: true } : d),
     }));
     setCustomers([]);
-  }, [gameState]);
+  };
+
+  const cps = calculateCPS(gameState);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-900 via-amber-950 to-stone-950 text-amber-50 overflow-hidden">
-      {/* Header Stats */}
-      <div className="p-4 bg-black/30 backdrop-blur-sm sticky top-0 z-20">
-        <div className="flex justify-between items-center max-w-lg mx-auto">
-          <div>
-            <div className="text-2xl font-bold text-amber-400">
-              {gameState.coins.toLocaleString()} <span className="text-sm">coins</span>
+    <div className="min-h-screen bg-stone-900 text-amber-50 font-mono">
+      {/* Stats Header */}
+      <header className="bg-gradient-to-b from-amber-900 to-amber-950 p-4 border-b-4 border-amber-700">
+        <div className="max-w-md mx-auto">
+          <div className="text-center">
+            <div className="text-4xl font-bold text-amber-300 tracking-wide">
+              {Math.floor(gameState.coins).toLocaleString()}
             </div>
-            <div className="text-xs text-amber-300/70">
-              {gameState.combo > 0 && <span className="text-green-400">🔥 {gameState.combo}x COMBO</span>}
+            <div className="text-amber-500 text-sm">
+              +{cps.toFixed(1)}/sec {gameState.nounHolder && <span className="text-purple-400">⌐◨-◨ 2x</span>}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm text-amber-300">
-              ⌐◨-◨ Prestige Lv.{gameState.prestigeLevel}
+          <div className="flex justify-between text-xs text-amber-600 mt-2">
+            <span>Served: {gameState.customersServed}</span>
+            <span>Prestige: Lv.{gameState.prestigeLevel}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Coffee Shop Visual */}
+      <div className="relative h-72 bg-gradient-to-b from-amber-950 via-stone-900 to-stone-950 overflow-hidden">
+        {/* Background - Wall */}
+        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-amber-900/30 to-transparent">
+          {/* Shelves */}
+          <div className="absolute top-8 left-8 right-8 h-3 bg-amber-800 rounded shadow-lg" />
+          <div className="absolute top-20 left-12 right-12 h-3 bg-amber-800 rounded shadow-lg" />
+          {/* Decorations based on level */}
+          {gameState.decorLevel >= 1 && (
+            <div className="absolute top-4 left-12 w-6 h-6 bg-green-600 rounded-full shadow-md" />
+          )}
+          {gameState.decorLevel >= 2 && (
+            <div className="absolute top-4 right-12 w-8 h-8 bg-amber-600 rounded shadow-md" />
+          )}
+          {gameState.decorLevel >= 3 && (
+            <div className="absolute top-14 left-20 w-4 h-8 bg-amber-400 rounded-sm shadow-md" />
+          )}
+        </div>
+
+        {/* Counter */}
+        <div className="absolute bottom-0 left-0 right-0 h-28">
+          {/* Counter top */}
+          <div className="absolute top-0 left-4 right-4 h-4 bg-gradient-to-b from-amber-600 to-amber-700 rounded-t-lg shadow-lg" />
+          {/* Counter body */}
+          <div className="absolute top-4 left-4 right-4 bottom-0 bg-gradient-to-b from-amber-800 to-amber-900 rounded-b-lg">
+            {/* Coffee Machine */}
+            <div
+              className="absolute left-4 -top-12 w-16 transition-all duration-300"
+              style={{ transform: `scale(${0.8 + gameState.machineLevel * 0.1})` }}
+            >
+              <div className="w-full h-16 bg-gradient-to-b from-stone-600 to-stone-800 rounded-t-lg shadow-xl">
+                <div className="absolute top-2 left-2 right-2 h-3 bg-stone-900 rounded" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-4 bg-amber-400 rounded-t" />
+              </div>
+              {/* Steam */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-1">
+                <div className="w-1 h-4 bg-white/30 rounded-full animate-steam" />
+                <div className="w-1 h-6 bg-white/20 rounded-full animate-steam" style={{ animationDelay: '0.2s' }} />
+                <div className="w-1 h-4 bg-white/30 rounded-full animate-steam" style={{ animationDelay: '0.4s' }} />
+              </div>
             </div>
-            <div className="text-xs text-amber-400/70">
-              {getEarningsMultiplier().toFixed(1)}x earnings
+
+            {/* Menu Board */}
+            <div className="absolute right-4 -top-10 w-20 h-14 bg-stone-800 rounded border-2 border-amber-700 p-1">
+              <div className="text-[8px] text-amber-400 text-center">MENU</div>
+              <div className="space-y-0.5 mt-1">
+                {gameState.menuItems >= 1 && <div className="h-1 bg-amber-600/50 rounded" />}
+                {gameState.menuItems >= 2 && <div className="h-1 bg-amber-600/50 rounded" />}
+                {gameState.menuItems >= 3 && <div className="h-1 bg-amber-600/50 rounded" />}
+                {gameState.menuItems >= 4 && <div className="h-1 bg-amber-600/50 rounded" />}
+              </div>
+            </div>
+
+            {/* Baristas */}
+            <div className="absolute bottom-2 left-24 flex gap-3">
+              {Array.from({ length: gameState.baristas }).map((_, i) => (
+                <div key={i} className="relative">
+                  {/* Barista body */}
+                  <div className="w-8 h-12 bg-gradient-to-b from-amber-100 to-amber-200 rounded-t-full shadow-lg">
+                    {/* Head */}
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 bg-amber-200 rounded-full">
+                      {/* Face */}
+                      <div className="absolute top-2 left-1 w-1 h-1 bg-stone-800 rounded-full" />
+                      <div className="absolute top-2 right-1 w-1 h-1 bg-stone-800 rounded-full" />
+                      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-2 h-0.5 bg-stone-800 rounded-full" />
+                    </div>
+                    {/* Apron */}
+                    <div className="absolute bottom-0 left-1 right-1 h-6 bg-amber-700 rounded-b" />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Isometric Shop View */}
-      <div className="relative h-64 overflow-hidden">
-        {/* Shop Floor */}
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{
-            background: 'linear-gradient(135deg, #78350f 0%, #451a03 50%, #292524 100%)',
-          }}
-        >
-          {/* Counter */}
-          <div className="absolute bottom-8 w-4/5 h-16 bg-gradient-to-r from-amber-800 via-amber-700 to-amber-800 rounded-t-lg border-t-4 border-amber-600 shadow-2xl">
-            <div className="absolute inset-x-0 top-0 h-2 bg-amber-600/50" />
-            {/* Coffee Machine */}
-            <div className="absolute left-4 -top-8 text-4xl">☕</div>
-            {/* Owned equipment */}
-            {gameState.equipment.filter(e => e.owned).slice(0, 3).map((eq, i) => (
-              <div key={eq.id} className="absolute -top-8 text-3xl" style={{ left: `${20 + i * 25}%` }}>
-                {eq.sprite}
-              </div>
-            ))}
-          </div>
-
-          {/* Customers */}
+        {/* Customers */}
+        <div className="absolute bottom-32 left-0 right-0 flex justify-center gap-4 px-4">
           {customers.map((customer, idx) => (
             <button
               key={customer.id}
               onClick={() => serveCustomer(customer.id)}
-              className={`absolute transition-all duration-300 ${customer.served ? 'opacity-0 translate-y-4' : ''}`}
-              style={{
-                bottom: '100px',
-                left: `${15 + idx * 18}%`,
-                transform: customer.served ? 'scale(1.2)' : 'scale(1)',
-              }}
+              className="relative group transition-transform hover:scale-110 active:scale-95"
             >
-              {/* Customer */}
-              <div className="relative">
-                <div className="text-4xl animate-bounce" style={{ animationDuration: '0.5s' }}>
-                  🧑
+              {/* Customer body */}
+              <div className="w-12 h-16 relative">
+                {/* Body */}
+                <div className="absolute bottom-0 w-full h-10 bg-gradient-to-b from-stone-500 to-stone-700 rounded-t-xl" />
+                {/* Head */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-amber-200 rounded-full shadow-md">
+                  <div className="absolute top-3 left-1.5 w-1.5 h-1.5 bg-stone-800 rounded-full" />
+                  <div className="absolute top-3 right-1.5 w-1.5 h-1.5 bg-stone-800 rounded-full" />
                 </div>
-                {/* Order bubble */}
-                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-black px-2 py-1 rounded-full text-sm font-bold whitespace-nowrap shadow-lg">
-                  {ORDER_EMOJIS[customer.order]} {customer.order}
-                </div>
-                {/* Patience bar */}
-                <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-100"
-                    style={{
-                      width: `${customer.patience}%`,
-                      backgroundColor: customer.patience > 50 ? '#22c55e' : customer.patience > 25 ? '#eab308' : '#ef4444',
-                    }}
-                  />
-                </div>
+              </div>
+              {/* Order bubble */}
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white text-stone-800 px-2 py-1 rounded-lg text-xs font-bold shadow-lg whitespace-nowrap">
+                {customer.order}
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45" />
+              </div>
+              {/* Patience bar */}
+              <div className="absolute -bottom-2 left-0 right-0 h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full transition-all"
+                  style={{
+                    width: `${customer.patience}%`,
+                    backgroundColor: customer.patience > 50 ? '#22c55e' : customer.patience > 25 ? '#eab308' : '#ef4444',
+                  }}
+                />
+              </div>
+              {/* Tip preview */}
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                +{Math.floor(customer.tip * (1 + customer.patience / 100))}
               </div>
             </button>
           ))}
+        </div>
 
-          {/* Staff */}
-          <div className="absolute bottom-12 right-4 flex gap-2">
-            {gameState.staff.filter(s => s.owned).map(staff => (
-              <div key={staff.id} className="text-2xl animate-pulse">
-                {staff.sprite}
-              </div>
-            ))}
+        {/* Floating numbers */}
+        {floats.map(f => (
+          <div
+            key={f.id}
+            className="absolute bottom-40 text-xl font-bold text-green-400 pointer-events-none"
+            style={{
+              left: `${f.x}%`,
+              animation: 'floatUp 1s ease-out forwards',
+            }}
+          >
+            +{f.value}
           </div>
+        ))}
 
-          {/* Floating Texts */}
-          {floatingTexts.map(float => (
-            <div
-              key={float.id}
-              className="absolute pointer-events-none font-bold text-xl"
-              style={{
-                left: `${float.x}%`,
-                bottom: '150px',
-                color: float.color,
-                animation: 'floatUp 1s ease-out forwards',
-              }}
-            >
-              {float.text}
-            </div>
-          ))}
-        </div>
-
-        {/* Decorations */}
-        <div className="absolute top-4 left-4 flex gap-2">
-          {gameState.decorations.filter(d => d.owned).map(dec => (
-            <span key={dec.id} className="text-2xl">🪴</span>
-          ))}
-        </div>
+        {/* Tap hint */}
+        {customers.length > 0 && gameState.baristas === 0 && (
+          <div className="absolute bottom-36 left-1/2 -translate-x-1/2 text-amber-400 text-xs animate-pulse">
+            👆 Tap to serve (or hire baristas for auto-serve)
+          </div>
+        )}
       </div>
 
-      {/* Instructions */}
-      {customers.length > 0 && (
-        <div className="text-center py-2 text-amber-300 text-sm animate-pulse">
-          👆 Tap customers to serve them!
-        </div>
-      )}
-      {customers.length === 0 && (
-        <div className="text-center py-2 text-amber-400/50 text-sm">
-          Waiting for customers...
-        </div>
-      )}
-
       {/* Shop Tabs */}
-      <div className="sticky top-16 z-10 bg-stone-900/90 backdrop-blur-sm">
-        <div className="flex justify-around max-w-lg mx-auto py-2">
-          {(['staff', 'equipment', 'decor'] as const).map(tab => (
+      <div className="bg-stone-800 border-y border-amber-900/50">
+        <div className="flex max-w-md mx-auto">
+          {(['upgrades', 'prestige', 'noun'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setSelectedTab(tab)}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                selectedTab === tab
-                  ? 'bg-amber-600 text-white'
-                  : 'text-amber-300 hover:bg-amber-800/50'
+              onClick={() => setShopTab(tab)}
+              className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                shopTab === tab ? 'bg-amber-800 text-amber-100' : 'text-amber-500 hover:bg-stone-700'
               }`}
             >
-              {tab === 'staff' && '👥 Staff'}
-              {tab === 'equipment' && '⚙️ Equipment'}
-              {tab === 'decor' && '🪴 Decor'}
+              {tab === 'upgrades' && '🛠 Upgrades'}
+              {tab === 'prestige' && '✨ Prestige'}
+              {tab === 'noun' && '⌐◨-◨ $NOUN'}
             </button>
           ))}
         </div>
       </div>
 
       {/* Shop Content */}
-      <div className="p-4 max-w-lg mx-auto space-y-3 pb-24">
-        {selectedTab === 'staff' && gameState.staff.map(item => (
-          <ShopItem
-            key={item.id}
-            name={item.name}
-            cost={item.cost}
-            bonus={`${item.multiplier}x earnings`}
-            owned={item.owned}
-            canAfford={gameState.coins >= item.cost}
-            isNounExclusive={item.isNounExclusive}
-            hasNoun={gameState.nounBalance > 0}
-            onBuy={() => buyItem('staff', item.id)}
-            sprite={item.sprite}
-          />
-        ))}
-        {selectedTab === 'equipment' && gameState.equipment.map(item => (
-          <ShopItem
-            key={item.id}
-            name={item.name}
-            cost={item.cost}
-            bonus={`${item.speedBonus}x speed`}
-            owned={item.owned}
-            canAfford={gameState.coins >= item.cost}
-            isNounExclusive={item.isNounExclusive}
-            hasNoun={gameState.nounBalance > 0}
-            onBuy={() => buyItem('equipment', item.id)}
-            sprite={item.sprite}
-          />
-        ))}
-        {selectedTab === 'decor' && gameState.decorations.map(item => (
-          <ShopItem
-            key={item.id}
-            name={item.name}
-            cost={item.cost}
-            bonus={`${item.bonus}x bonus`}
-            owned={item.owned}
-            canAfford={gameState.coins >= item.cost}
-            isNounExclusive={item.isNounExclusive}
-            hasNoun={gameState.nounBalance > 0}
-            onBuy={() => buyItem('decorations', item.id)}
-          />
-        ))}
+      <div className="max-w-md mx-auto p-4 space-y-3 pb-20">
+        {shopTab === 'upgrades' && (
+          <>
+            <UpgradeCard
+              name="Hire Barista"
+              description="Auto-serves customers"
+              level={gameState.baristas}
+              maxLevel={5}
+              cost={BARISTA_COSTS[gameState.baristas]}
+              coins={gameState.coins}
+              effect={`+2/sec, ${gameState.baristas + 1} auto-serve`}
+              onBuy={() => buyUpgrade('baristas')}
+            />
+            <UpgradeCard
+              name="Coffee Machine"
+              description="Faster brewing"
+              level={gameState.machineLevel}
+              maxLevel={5}
+              cost={MACHINE_COSTS[gameState.machineLevel - 1]}
+              coins={gameState.coins}
+              effect={`${(1 + gameState.machineLevel * 0.5).toFixed(1)}x speed`}
+              onBuy={() => buyUpgrade('machineLevel')}
+            />
+            <UpgradeCard
+              name="Decorations"
+              description="Attract more tips"
+              level={gameState.decorLevel}
+              maxLevel={4}
+              cost={DECOR_COSTS[gameState.decorLevel]}
+              coins={gameState.coins}
+              effect={`${(1 + gameState.decorLevel * 0.25).toFixed(2)}x tips`}
+              onBuy={() => buyUpgrade('decorLevel')}
+            />
+            <UpgradeCard
+              name="Menu Items"
+              description="More variety = more customers"
+              level={gameState.menuItems}
+              maxLevel={5}
+              cost={MENU_COSTS[gameState.menuItems - 1]}
+              coins={gameState.coins}
+              effect={`${(1 + gameState.menuItems * 0.3).toFixed(1)}x earnings`}
+              onBuy={() => buyUpgrade('menuItems')}
+            />
+          </>
+        )}
 
-        {/* Prestige Button */}
-        <div className="pt-4 border-t border-amber-800/50">
-          <button
-            onClick={prestige}
-            disabled={gameState.customersServed < 100}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              gameState.customersServed >= 100
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white animate-pulse'
-                : 'bg-gray-700 text-gray-400'
-            }`}
-          >
-            ✨ Open New Location (Prestige)
-            <div className="text-xs font-normal mt-1">
+        {shopTab === 'prestige' && (
+          <div className="text-center py-8">
+            <div className="text-6xl mb-4">✨</div>
+            <h3 className="text-xl font-bold text-amber-300 mb-2">Open New Location</h3>
+            <p className="text-amber-500 text-sm mb-4">
+              Reset your progress for a permanent {(1.5 + gameState.prestigeLevel * 0.5).toFixed(1)}x multiplier
+            </p>
+            <div className="text-amber-400 mb-4">
               {gameState.customersServed >= 100
-                ? `Reset for ${(1 + (gameState.prestigeLevel + 1) * 0.5).toFixed(1)}x permanent multiplier!`
-                : `Serve ${100 - gameState.customersServed} more customers`
-              }
+                ? 'Ready to expand!'
+                : `Serve ${100 - gameState.customersServed} more customers`}
             </div>
-          </button>
-        </div>
-
-        {/* $NOUN Section */}
-        <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-purple-900/50 to-pink-900/50 border border-purple-500/30">
-          <h3 className="font-bold text-purple-300 flex items-center gap-2">
-            ⌐◨-◨ $NOUN Holder Benefits
-          </h3>
-          <ul className="mt-2 text-sm text-purple-200/80 space-y-1">
-            <li>✓ Permanent 2x earnings multiplier</li>
-            <li>✓ Exclusive Noun Barista (5x multiplier)</li>
-            <li>✓ Golden Noun Machine (3x speed)</li>
-            <li>✓ Noun Statue decoration</li>
-            <li>✓ VIP badge on leaderboard</li>
-          </ul>
-          {gameState.nounBalance <= 0 && (
-            <button className="mt-3 w-full py-2 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium text-sm transition-colors">
-              Get $NOUN →
+            <button
+              onClick={prestige}
+              disabled={gameState.customersServed < 100}
+              className={`px-8 py-3 rounded-xl font-bold transition-all ${
+                gameState.customersServed >= 100
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
+                  : 'bg-stone-700 text-stone-500'
+              }`}
+            >
+              Prestige →
             </button>
-          )}
-        </div>
-
-        {/* Stats */}
-        <div className="mt-4 p-4 rounded-xl bg-stone-800/50 text-sm">
-          <div className="grid grid-cols-2 gap-2 text-amber-300/70">
-            <div>Total Earned: {gameState.totalEarned.toLocaleString()}</div>
-            <div>Customers Served: {gameState.customersServed}</div>
-            <div>Max Combo: {gameState.maxCombo}</div>
-            <div>Prestige Level: {gameState.prestigeLevel}</div>
           </div>
-        </div>
+        )}
+
+        {shopTab === 'noun' && (
+          <div className="text-center py-6">
+            <div className="text-5xl mb-4">⌐◨-◨</div>
+            <h3 className="text-xl font-bold text-purple-300 mb-4">$NOUN Holder Benefits</h3>
+            <div className="space-y-2 text-left bg-purple-900/20 rounded-xl p-4 border border-purple-500/30">
+              <div className="flex items-center gap-2">
+                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
+                  {gameState.nounHolder ? '✓' : '○'}
+                </span>
+                <span className="text-purple-200">Permanent 2x earnings</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
+                  {gameState.nounHolder ? '✓' : '○'}
+                </span>
+                <span className="text-purple-200">Exclusive Noun Barista (coming soon)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
+                  {gameState.nounHolder ? '✓' : '○'}
+                </span>
+                <span className="text-purple-200">Golden decorations (coming soon)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
+                  {gameState.nounHolder ? '✓' : '○'}
+                </span>
+                <span className="text-purple-200">Leaderboard VIP badge</span>
+              </div>
+            </div>
+            {!gameState.nounHolder && (
+              <button className="mt-6 px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-colors">
+                Get $NOUN to unlock →
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// Shop Item Component
-function ShopItem({
+function UpgradeCard({
   name,
+  description,
+  level,
+  maxLevel,
   cost,
-  bonus,
-  owned,
-  canAfford,
-  isNounExclusive,
-  hasNoun,
+  coins,
+  effect,
   onBuy,
-  sprite,
 }: {
   name: string;
-  cost: number;
-  bonus: string;
-  owned: boolean;
-  canAfford: boolean;
-  isNounExclusive?: boolean;
-  hasNoun?: boolean;
+  description: string;
+  level: number;
+  maxLevel: number;
+  cost?: number;
+  coins: number;
+  effect: string;
   onBuy: () => void;
-  sprite?: string;
 }) {
-  const locked = isNounExclusive && !hasNoun;
+  const maxed = level >= maxLevel;
+  const canAfford = cost !== undefined && coins >= cost;
 
   return (
     <button
       onClick={onBuy}
-      disabled={owned || (!isNounExclusive && !canAfford) || locked}
-      className={`w-full p-4 rounded-xl flex items-center gap-3 transition-all ${
-        owned
-          ? 'bg-green-900/30 border border-green-500/30'
-          : locked
-            ? 'bg-purple-900/20 border border-purple-500/30'
-            : canAfford || isNounExclusive
-              ? 'bg-amber-800/50 hover:bg-amber-700/50 border border-amber-600/30'
-              : 'bg-stone-800/30 border border-stone-700/30 opacity-50'
+      disabled={maxed || !canAfford}
+      className={`w-full p-4 rounded-xl text-left transition-all ${
+        maxed
+          ? 'bg-green-900/20 border border-green-700/30'
+          : canAfford
+            ? 'bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/40 hover:scale-[1.02]'
+            : 'bg-stone-800/50 border border-stone-700/30 opacity-60'
       }`}
     >
-      {sprite && <span className="text-3xl">{sprite}</span>}
-      <div className="flex-1 text-left">
-        <div className="font-medium flex items-center gap-2">
-          {name}
-          {isNounExclusive && <span className="text-xs bg-purple-600 px-2 py-0.5 rounded">$NOUN</span>}
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="font-bold text-amber-200">{name}</div>
+          <div className="text-xs text-amber-500">{description}</div>
+          <div className="text-xs text-green-400 mt-1">{effect}</div>
         </div>
-        <div className="text-xs text-amber-300/70">{bonus}</div>
-      </div>
-      <div className="text-right">
-        {owned ? (
-          <span className="text-green-400 text-sm">✓ Owned</span>
-        ) : locked ? (
-          <span className="text-purple-400 text-sm">Hold $NOUN</span>
-        ) : (
-          <span className={canAfford ? 'text-amber-400' : 'text-gray-500'}>
-            {isNounExclusive ? 'FREE' : cost.toLocaleString()}
-          </span>
-        )}
+        <div className="text-right">
+          <div className="text-xs text-amber-600">Lv.{level}/{maxLevel}</div>
+          {maxed ? (
+            <div className="text-green-400 text-sm">MAX</div>
+          ) : (
+            <div className={`font-bold ${canAfford ? 'text-amber-300' : 'text-stone-500'}`}>
+              {cost?.toLocaleString()}
+            </div>
+          )}
+        </div>
       </div>
     </button>
   );
