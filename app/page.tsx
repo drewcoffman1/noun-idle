@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import CoffeeShop from '@/components/CoffeeShop';
+import CoffeeShopGame from '@/components/CoffeeShopGame';
 import { initializeMiniApp, sdk } from '@/lib/farcaster';
 
 export default function Home() {
@@ -65,5 +65,5 @@ export default function Home() {
     );
   }
 
-  return <CoffeeShop fid={fid} />;
+  return <CoffeeShopGame fid={fid} />;
 }
