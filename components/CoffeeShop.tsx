@@ -7,11 +7,20 @@ interface CoffeeShopProps {
   fid: number;
 }
 
+interface FloatingNumber {
+  id: number;
+  value: number;
+  x: number;
+  y: number;
+}
+
 export default function CoffeeShop({ fid }: CoffeeShopProps) {
   const [state, setState] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
   const [idleEarnings, setIdleEarnings] = useState<number>(0);
+  const [floatingNumbers, setFloatingNumbers] = useState<FloatingNumber[]>([]);
+  const [tapScale, setTapScale] = useState(1);
 
   // Fetch initial state
   useEffect(() => {
@@ -69,6 +78,49 @@ export default function CoffeeShop({ fid }: CoffeeShopProps) {
       setCollecting(false);
     }
   }, [fid, collecting]);
+
+  // Handle tapping the coffee cup for instant coins
+  const handleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!state) return;
+
+    const rate = calculateProductionRate(state);
+    const tapValue = Math.max(1, Math.floor(rate)); // At least 1 coin per tap
+
+    // Update state with tap earnings
+    setState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        coins: prev.coins + tapValue,
+        totalCoffees: prev.totalCoffees + tapValue,
+      };
+    });
+
+    // Visual feedback - scale animation
+    setTapScale(0.9);
+    setTimeout(() => setTapScale(1), 100);
+
+    // Add floating number
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.random() * 60 - 30; // Random horizontal offset
+    const newFloat: FloatingNumber = {
+      id: Date.now() + Math.random(),
+      value: tapValue,
+      x,
+      y: 0,
+    };
+    setFloatingNumbers((prev) => [...prev, newFloat]);
+
+    // Remove floating number after animation
+    setTimeout(() => {
+      setFloatingNumbers((prev) => prev.filter((f) => f.id !== newFloat.id));
+    }, 1000);
+
+    // Sync to server periodically (every 10 taps or so)
+    if (Math.random() < 0.1) {
+      handleCollect();
+    }
+  }, [state, handleCollect]);
 
   const handleUpgrade = useCallback(async (upgrade: keyof typeof UPGRADE_COSTS) => {
     try {
@@ -167,22 +219,57 @@ export default function CoffeeShop({ fid }: CoffeeShopProps) {
       </div>
 
       {/* Coffee Cup - Tap to Collect */}
-      <div className="flex justify-center mb-8">
-        <button
-          onClick={handleCollect}
-          disabled={collecting}
-          className="relative w-32 h-40 bg-amber-800 rounded-b-3xl rounded-t-lg border-4 border-amber-600 transition-transform active:scale-95 hover:bg-amber-700"
-        >
-          <div className="absolute inset-2 bg-amber-950 rounded-b-2xl rounded-t overflow-hidden">
-            <div
-              className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-amber-600 to-amber-500 transition-all"
-              style={{ height: `${Math.min(100, (state.coins % 100))}%` }}
-            />
+      <div className="flex justify-center mb-8 relative">
+        {/* Floating numbers */}
+        {floatingNumbers.map((float) => (
+          <div
+            key={float.id}
+            className="absolute text-2xl font-bold text-yellow-400 pointer-events-none animate-float-up"
+            style={{
+              left: `calc(50% + ${float.x}px)`,
+              top: '0',
+              transform: 'translateX(-50%)',
+              animation: 'floatUp 1s ease-out forwards',
+            }}
+          >
+            +{float.value}
           </div>
-          <div className="absolute -right-4 top-1/3 w-6 h-12 border-4 border-amber-600 rounded-r-full bg-amber-800" />
-          <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-amber-300">
-            TAP
-          </span>
+        ))}
+
+        <button
+          onClick={handleTap}
+          className="relative w-36 h-44 transition-transform cursor-pointer select-none"
+          style={{ transform: `scale(${tapScale})` }}
+        >
+          {/* Steam */}
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex gap-1">
+            <div className="w-2 h-8 bg-gradient-to-t from-gray-400/50 to-transparent rounded-full animate-steam" style={{ animationDelay: '0s' }} />
+            <div className="w-2 h-10 bg-gradient-to-t from-gray-400/50 to-transparent rounded-full animate-steam" style={{ animationDelay: '0.3s' }} />
+            <div className="w-2 h-8 bg-gradient-to-t from-gray-400/50 to-transparent rounded-full animate-steam" style={{ animationDelay: '0.6s' }} />
+          </div>
+
+          {/* Cup body */}
+          <div className="absolute inset-0 bg-gradient-to-b from-amber-100 to-amber-200 rounded-b-[40px] rounded-t-lg border-4 border-amber-300 shadow-lg">
+            {/* Coffee inside */}
+            <div className="absolute inset-3 bg-amber-950 rounded-b-[32px] rounded-t overflow-hidden">
+              {/* Coffee surface with gradient */}
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-amber-800 via-amber-700 to-amber-600 transition-all duration-300"
+                style={{ height: `${Math.min(95, 60 + (state.coins % 40))}%` }}
+              >
+                {/* Coffee foam/crema */}
+                <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-amber-400 to-amber-600 opacity-80" />
+              </div>
+            </div>
+          </div>
+
+          {/* Cup handle */}
+          <div className="absolute -right-3 top-1/3 w-5 h-10 border-4 border-amber-300 rounded-r-full bg-amber-100" />
+
+          {/* Tap indicator */}
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-amber-600 text-white text-xs px-3 py-1 rounded-full font-bold shadow-md">
+            TAP!
+          </div>
         </button>
       </div>
 
