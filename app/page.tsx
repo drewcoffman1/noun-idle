@@ -17,21 +17,13 @@ export default function Home() {
         if (context?.user?.fid) {
           setFid(context.user.fid);
         } else {
-          // Development fallback - use a test FID
-          if (process.env.NODE_ENV === 'development') {
-            setFid(1); // Test FID for development
-          } else {
-            setError('Could not get Farcaster user');
-          }
+          // Demo mode - use a test FID so people can try it
+          setFid(99999); // Demo user
         }
       } catch (err) {
         console.error('Init error:', err);
-        // Development fallback
-        if (process.env.NODE_ENV === 'development') {
-          setFid(1);
-        } else {
-          setError('Failed to initialize mini app');
-        }
+        // Demo mode fallback
+        setFid(99999); // Demo user
       } finally {
         setIsLoading(false);
       }
