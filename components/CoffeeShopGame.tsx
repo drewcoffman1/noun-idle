@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Barista, Customer as PixelCustomer, CoffeeMachine, Counter, CoffeeCup, Steam } from './PixelArt';
 
 // Types
 interface Customer {
@@ -228,27 +229,21 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
           )}
         </div>
 
-        {/* Counter */}
+        {/* Counter - Pixel Art */}
         <div className="absolute bottom-0 left-0 right-0 h-28">
-          {/* Counter top */}
-          <div className="absolute top-0 left-4 right-4 h-4 bg-gradient-to-b from-amber-600 to-amber-700 rounded-t-lg shadow-lg" />
-          {/* Counter body */}
-          <div className="absolute top-4 left-4 right-4 bottom-0 bg-gradient-to-b from-amber-800 to-amber-900 rounded-b-lg">
-            {/* Coffee Machine */}
+          {/* Pixel Art Counter */}
+          <div className="absolute top-0 left-4 right-4 overflow-hidden">
+            <Counter width={400} />
+          </div>
+          {/* Counter body for equipment */}
+          <div className="absolute top-8 left-4 right-4 bottom-0 bg-gradient-to-b from-amber-800 to-amber-900">
+            {/* Coffee Machine - Pixel Art */}
             <div
-              className="absolute left-4 -top-12 w-16 transition-all duration-300"
+              className="absolute left-4 -top-16 transition-all duration-300"
               style={{ transform: `scale(${0.8 + gameState.machineLevel * 0.1})` }}
             >
-              <div className="w-full h-16 bg-gradient-to-b from-stone-600 to-stone-800 rounded-t-lg shadow-xl">
-                <div className="absolute top-2 left-2 right-2 h-3 bg-stone-900 rounded" />
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-4 bg-amber-400 rounded-t" />
-              </div>
-              {/* Steam */}
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-1">
-                <div className="w-1 h-4 bg-white/30 rounded-full animate-steam" />
-                <div className="w-1 h-6 bg-white/20 rounded-full animate-steam" style={{ animationDelay: '0.2s' }} />
-                <div className="w-1 h-4 bg-white/30 rounded-full animate-steam" style={{ animationDelay: '0.4s' }} />
-              </div>
+              <Steam className="absolute -top-3 left-1/2 -translate-x-1/2" />
+              <CoffeeMachine scale={1} />
             </div>
 
             {/* Menu Board */}
@@ -262,55 +257,41 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
               </div>
             </div>
 
-            {/* Baristas */}
-            <div className="absolute bottom-2 left-24 flex gap-3">
+            {/* Baristas - Pixel Art */}
+            <div className="absolute bottom-0 left-28 flex gap-2">
               {Array.from({ length: gameState.baristas }).map((_, i) => (
-                <div key={i} className="relative">
-                  {/* Barista body */}
-                  <div className="w-8 h-12 bg-gradient-to-b from-amber-100 to-amber-200 rounded-t-full shadow-lg">
-                    {/* Head */}
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 bg-amber-200 rounded-full">
-                      {/* Face */}
-                      <div className="absolute top-2 left-1 w-1 h-1 bg-stone-800 rounded-full" />
-                      <div className="absolute top-2 right-1 w-1 h-1 bg-stone-800 rounded-full" />
-                      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-2 h-0.5 bg-stone-800 rounded-full" />
-                    </div>
-                    {/* Apron */}
-                    <div className="absolute bottom-0 left-1 right-1 h-6 bg-amber-700 rounded-b" />
-                  </div>
+                <div key={i} className="relative animate-bounce" style={{ animationDelay: `${i * 0.2}s`, animationDuration: '2s' }}>
+                  <Barista scale={1} />
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Customers */}
-        <div className="absolute bottom-32 left-0 right-0 flex justify-center gap-4 px-4">
+        {/* Customers - Pixel Art */}
+        <div className="absolute bottom-32 left-0 right-0 flex justify-center gap-6 px-4">
           {customers.map((customer, idx) => (
             <button
               key={customer.id}
               onClick={() => serveCustomer(customer.id)}
               className="relative group transition-transform hover:scale-110 active:scale-95"
             >
-              {/* Customer body */}
-              <div className="w-12 h-16 relative">
-                {/* Body */}
-                <div className="absolute bottom-0 w-full h-10 bg-gradient-to-b from-stone-500 to-stone-700 rounded-t-xl" />
-                {/* Head */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-amber-200 rounded-full shadow-md">
-                  <div className="absolute top-3 left-1.5 w-1.5 h-1.5 bg-stone-800 rounded-full" />
-                  <div className="absolute top-3 right-1.5 w-1.5 h-1.5 bg-stone-800 rounded-full" />
-                </div>
+              {/* Pixel Art Customer */}
+              <div className="relative">
+                <PixelCustomer scale={1.2} />
               </div>
-              {/* Order bubble */}
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white text-stone-800 px-2 py-1 rounded-lg text-xs font-bold shadow-lg whitespace-nowrap">
+              {/* Order bubble with coffee icon */}
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-stone-800 px-2 py-1 rounded-lg text-xs font-bold shadow-lg whitespace-nowrap flex items-center gap-1">
+                <span className="inline-block w-4 h-4">
+                  <CoffeeCup scale={0.4} />
+                </span>
                 {customer.order}
                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45" />
               </div>
               {/* Patience bar */}
-              <div className="absolute -bottom-2 left-0 right-0 h-1.5 bg-stone-700 rounded-full overflow-hidden">
+              <div className="absolute -bottom-3 left-0 right-0 h-2 bg-stone-700 rounded-full overflow-hidden shadow-inner">
                 <div
-                  className="h-full transition-all"
+                  className="h-full transition-all duration-100"
                   style={{
                     width: `${customer.patience}%`,
                     backgroundColor: customer.patience > 50 ? '#22c55e' : customer.patience > 25 ? '#eab308' : '#ef4444',
@@ -318,7 +299,7 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
                 />
               </div>
               {/* Tip preview */}
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-xs text-amber-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
                 +{Math.floor(customer.tip * (1 + customer.patience / 100))}
               </div>
             </button>
@@ -341,8 +322,8 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
 
         {/* Tap hint */}
         {customers.length > 0 && gameState.baristas === 0 && (
-          <div className="absolute bottom-36 left-1/2 -translate-x-1/2 text-amber-400 text-xs animate-pulse">
-            👆 Tap to serve (or hire baristas for auto-serve)
+          <div className="absolute bottom-40 left-1/2 -translate-x-1/2 text-amber-400 text-xs animate-pulse bg-stone-900/80 px-3 py-1 rounded-full">
+            TAP customers to serve them!
           </div>
         )}
       </div>
@@ -358,9 +339,9 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
                 shopTab === tab ? 'bg-amber-800 text-amber-100' : 'text-amber-500 hover:bg-stone-700'
               }`}
             >
-              {tab === 'upgrades' && '🛠 Upgrades'}
-              {tab === 'prestige' && '✨ Prestige'}
-              {tab === 'noun' && '⌐◨-◨ $NOUN'}
+              {tab === 'upgrades' && 'UPGRADES'}
+              {tab === 'prestige' && 'PRESTIGE'}
+              {tab === 'noun' && '$NOUN'}
             </button>
           ))}
         </div>
@@ -415,8 +396,8 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
 
         {shopTab === 'prestige' && (
           <div className="text-center py-8">
-            <div className="text-6xl mb-4">✨</div>
-            <h3 className="text-xl font-bold text-amber-300 mb-2">Open New Location</h3>
+            <div className="text-4xl mb-4 text-amber-300 font-bold">NEW LOCATION</div>
+            <h3 className="text-lg text-amber-400 mb-2">Expand your empire</h3>
             <p className="text-amber-500 text-sm mb-4">
               Reset your progress for a permanent {(1.5 + gameState.prestigeLevel * 0.5).toFixed(1)}x multiplier
             </p>
@@ -441,7 +422,7 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
 
         {shopTab === 'noun' && (
           <div className="text-center py-6">
-            <div className="text-5xl mb-4">⌐◨-◨</div>
+            <div className="text-3xl mb-4 font-mono text-purple-300">{"⌐◨-◨"}</div>
             <h3 className="text-xl font-bold text-purple-300 mb-4">$NOUN Holder Benefits</h3>
             <div className="space-y-2 text-left bg-purple-900/20 rounded-xl p-4 border border-purple-500/30">
               <div className="flex items-center gap-2">
