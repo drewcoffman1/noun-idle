@@ -1,514 +1,684 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Barista, Customer as PixelCustomer, CoffeeMachine, Counter, CoffeeCup, Steam } from './PixelArt';
 
-// Types
-interface Customer {
-  id: number;
-  order: string;
-  patience: number;
-  maxPatience: number;
-  position: number;
-  served: boolean;
-  tip: number;
-}
-
+// Game state
 interface GameState {
-  coins: number;
-  coinsPerSecond: number;
-  totalEarned: number;
-  customersServed: number;
+  coffee: number;
+  totalCoffee: number;
+  coffeePerTap: number;
+  coffeePerSecond: number;
   prestigeLevel: number;
-  nounHolder: boolean;
-  // Upgrades
-  baristas: number;
-  machineLevel: number;
-  decorLevel: number;
-  menuItems: number;
+  prestigeMultiplier: number;
+
+  // Upgrades (unlocked progressively)
+  upgrades: {
+    fingers: number;      // +1 per tap
+    autoBrewer: number;   // +1 per second
+    espresso: number;     // +5 per second
+    barista: number;      // +20 per second
+    franchise: number;    // 2x multiplier
+  };
+
+  // Unlocks (what player has discovered)
+  unlocks: {
+    autoBrewer: boolean;
+    espresso: boolean;
+    barista: boolean;
+    franchise: boolean;
+    prestige: boolean;
+    goldenBeans: boolean;
+  };
+
+  // Milestones for $NOUN
+  milestonesClaimed: string[];
 }
 
-const BARISTA_COSTS = [50, 200, 800, 3200, 12800];
-const MACHINE_COSTS = [100, 500, 2500, 12500];
-const DECOR_COSTS = [75, 300, 1200, 4800];
-const MENU_COSTS = [150, 600, 2400, 9600];
+// Upgrade definitions
+const UPGRADES = {
+  fingers: {
+    name: 'Extra Fingers',
+    desc: '+1 coffee per tap',
+    baseCost: 10,
+    costMultiplier: 1.5,
+    maxLevel: 50,
+  },
+  autoBrewer: {
+    name: 'Auto-Brewer',
+    desc: '+1 coffee per second',
+    baseCost: 50,
+    costMultiplier: 1.4,
+    maxLevel: 50,
+    unlockAt: 25,
+  },
+  espresso: {
+    name: 'Espresso Machine',
+    desc: '+5 coffee per second',
+    baseCost: 500,
+    costMultiplier: 1.5,
+    maxLevel: 30,
+    unlockAt: 200,
+  },
+  barista: {
+    name: 'Hire Barista',
+    desc: '+20 coffee per second',
+    baseCost: 5000,
+    costMultiplier: 1.6,
+    maxLevel: 20,
+    unlockAt: 2000,
+  },
+  franchise: {
+    name: 'Open Franchise',
+    desc: '2x all production',
+    baseCost: 50000,
+    costMultiplier: 3,
+    maxLevel: 5,
+    unlockAt: 20000,
+  },
+};
 
-export default function CoffeeShopGame({ fid }: { fid: number }) {
-  const [gameState, setGameState] = useState<GameState>({
-    coins: 0,
-    coinsPerSecond: 1,
-    totalEarned: 0,
-    customersServed: 0,
-    prestigeLevel: 0,
-    nounHolder: false,
-    baristas: 0,
-    machineLevel: 1,
-    decorLevel: 0,
-    menuItems: 1,
-  });
+const MILESTONES = [
+  { id: 'first100', requirement: 100, reward: 1, desc: 'Brew 100 coffee' },
+  { id: 'first1k', requirement: 1000, reward: 5, desc: 'Brew 1,000 coffee' },
+  { id: 'first10k', requirement: 10000, reward: 10, desc: 'Brew 10,000 coffee' },
+  { id: 'first100k', requirement: 100000, reward: 25, desc: 'Brew 100,000 coffee' },
+  { id: 'first1m', requirement: 1000000, reward: 50, desc: 'Brew 1,000,000 coffee' },
+];
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [floats, setFloats] = useState<{ id: number; value: number; x: number }[]>([]);
-  const [shopTab, setShopTab] = useState<'upgrades' | 'prestige' | 'noun'>('upgrades');
-  const customerIdRef = useRef(0);
+function getUpgradeCost(upgrade: keyof typeof UPGRADES, level: number): number {
+  const u = UPGRADES[upgrade];
+  return Math.floor(u.baseCost * Math.pow(u.costMultiplier, level));
+}
 
-  // Calculate coins per second (IDLE earnings)
-  const calculateCPS = useCallback((state: GameState) => {
-    let base = 1;
-    base += state.baristas * 2; // Each barista adds 2/sec
-    base *= (1 + state.machineLevel * 0.5); // Machine multiplier
-    base *= (1 + state.decorLevel * 0.25); // Decor multiplier
-    base *= (1 + state.menuItems * 0.3); // Menu multiplier
-    base *= (1 + state.prestigeLevel * 0.5); // Prestige multiplier
-    if (state.nounHolder) base *= 2; // $NOUN 2x bonus
-    return Math.floor(base * 10) / 10;
-  }, []);
+function formatNumber(n: number): string {
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return Math.floor(n).toString();
+}
 
-  // IDLE: Passive income every second
+// Particle component
+function Particle({ x, y, value, onComplete }: { x: number; y: number; value: number; onComplete: () => void }) {
   useEffect(() => {
-    const cps = calculateCPS(gameState);
-    const interval = setInterval(() => {
-      setGameState(prev => ({
-        ...prev,
-        coins: prev.coins + cps,
-        totalEarned: prev.totalEarned + cps,
-        coinsPerSecond: cps,
-      }));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [gameState.baristas, gameState.machineLevel, gameState.decorLevel, gameState.menuItems, gameState.prestigeLevel, gameState.nounHolder, calculateCPS]);
-
-  // Spawn customers (visual only - they give bonus when tapped)
-  useEffect(() => {
-    const spawn = () => {
-      if (customers.length >= 4) return;
-      const customer: Customer = {
-        id: customerIdRef.current++,
-        order: ['Latte', 'Espresso', 'Mocha', 'Cold Brew'][Math.floor(Math.random() * 4)],
-        patience: 100,
-        maxPatience: 100,
-        position: customers.length,
-        served: false,
-        tip: Math.floor(5 + Math.random() * 15 + gameState.menuItems * 5),
-      };
-      setCustomers(prev => [...prev, customer]);
-    };
-    const interval = setInterval(spawn, 3000 / (1 + gameState.baristas * 0.3));
-    spawn(); // Initial customer
-    return () => clearInterval(interval);
-  }, [gameState.baristas, gameState.menuItems]);
-
-  // Auto-serve customers (IDLE) - baristas serve automatically
-  useEffect(() => {
-    if (gameState.baristas === 0) return;
-    const autoServe = () => {
-      setCustomers(prev => {
-        if (prev.length === 0) return prev;
-        const toServe = prev[0];
-        if (toServe.served) return prev;
-
-        // Auto-serve gives base tip (no bonus)
-        setGameState(g => ({
-          ...g,
-          coins: g.coins + toServe.tip * 0.5, // Half tip for auto
-          totalEarned: g.totalEarned + toServe.tip * 0.5,
-          customersServed: g.customersServed + 1,
-        }));
-
-        return prev.slice(1);
-      });
-    };
-    const interval = setInterval(autoServe, 4000 / gameState.baristas);
-    return () => clearInterval(interval);
-  }, [gameState.baristas]);
-
-  // Manual serve (ACTIVE bonus)
-  const serveCustomer = (id: number) => {
-    const customer = customers.find(c => c.id === id);
-    if (!customer || customer.served) return;
-
-    const bonus = customer.tip * (1 + customer.patience / 100); // Speed bonus
-    setGameState(prev => ({
-      ...prev,
-      coins: prev.coins + bonus,
-      totalEarned: prev.totalEarned + bonus,
-      customersServed: prev.customersServed + 1,
-    }));
-
-    // Float animation
-    setFloats(prev => [...prev, { id: Date.now(), value: Math.floor(bonus), x: 30 + Math.random() * 40 }]);
-    setTimeout(() => setFloats(prev => prev.slice(1)), 1000);
-
-    setCustomers(prev => prev.filter(c => c.id !== id));
-  };
-
-  // Decrease patience
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCustomers(prev => prev.map(c => ({
-        ...c,
-        patience: Math.max(0, c.patience - 1),
-      })).filter(c => c.patience > 0));
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Buy upgrades
-  const buyUpgrade = (type: 'baristas' | 'machineLevel' | 'decorLevel' | 'menuItems') => {
-    const costs = {
-      baristas: BARISTA_COSTS,
-      machineLevel: MACHINE_COSTS,
-      decorLevel: DECOR_COSTS,
-      menuItems: MENU_COSTS,
-    };
-    const level = gameState[type];
-    const cost = costs[type][level];
-    if (!cost || gameState.coins < cost) return;
-
-    setGameState(prev => ({
-      ...prev,
-      coins: prev.coins - cost,
-      [type]: prev[type] + 1,
-    }));
-  };
-
-  // Prestige
-  const prestige = () => {
-    if (gameState.customersServed < 100) return;
-    setGameState(prev => ({
-      ...prev,
-      coins: 0,
-      customersServed: 0,
-      baristas: 0,
-      machineLevel: 1,
-      decorLevel: 0,
-      menuItems: 1,
-      prestigeLevel: prev.prestigeLevel + 1,
-    }));
-    setCustomers([]);
-  };
-
-  const cps = calculateCPS(gameState);
+    const timer = setTimeout(onComplete, 1000);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
 
   return (
-    <div className="min-h-screen bg-stone-900 text-amber-50 font-mono">
-      {/* Stats Header */}
-      <header className="bg-gradient-to-b from-amber-900 to-amber-950 p-4 border-b-4 border-amber-700">
-        <div className="max-w-md mx-auto">
-          <div className="text-center">
-            <div className="text-4xl font-bold text-amber-300 tracking-wide">
-              {Math.floor(gameState.coins).toLocaleString()}
-            </div>
-            <div className="text-amber-500 text-sm">
-              +{cps.toFixed(1)}/sec {gameState.nounHolder && <span className="text-purple-400">⌐◨-◨ 2x</span>}
-            </div>
-          </div>
-          <div className="flex justify-between text-xs text-amber-600 mt-2">
-            <span>Served: {gameState.customersServed}</span>
-            <span>Prestige: Lv.{gameState.prestigeLevel}</span>
-          </div>
-        </div>
-      </header>
-
-      {/* Coffee Shop Visual */}
-      <div className="relative h-72 bg-gradient-to-b from-amber-950 via-stone-900 to-stone-950 overflow-hidden">
-        {/* Background - Wall */}
-        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-amber-900/30 to-transparent">
-          {/* Shelves */}
-          <div className="absolute top-8 left-8 right-8 h-3 bg-amber-800 rounded shadow-lg" />
-          <div className="absolute top-20 left-12 right-12 h-3 bg-amber-800 rounded shadow-lg" />
-          {/* Decorations based on level */}
-          {gameState.decorLevel >= 1 && (
-            <div className="absolute top-4 left-12 w-6 h-6 bg-green-600 rounded-full shadow-md" />
-          )}
-          {gameState.decorLevel >= 2 && (
-            <div className="absolute top-4 right-12 w-8 h-8 bg-amber-600 rounded shadow-md" />
-          )}
-          {gameState.decorLevel >= 3 && (
-            <div className="absolute top-14 left-20 w-4 h-8 bg-amber-400 rounded-sm shadow-md" />
-          )}
-        </div>
-
-        {/* Counter - Pixel Art */}
-        <div className="absolute bottom-0 left-0 right-0 h-28">
-          {/* Pixel Art Counter */}
-          <div className="absolute top-0 left-4 right-4 overflow-hidden">
-            <Counter width={400} />
-          </div>
-          {/* Counter body for equipment */}
-          <div className="absolute top-8 left-4 right-4 bottom-0 bg-gradient-to-b from-amber-800 to-amber-900">
-            {/* Coffee Machine - Pixel Art */}
-            <div
-              className="absolute left-4 -top-16 transition-all duration-300"
-              style={{ transform: `scale(${0.8 + gameState.machineLevel * 0.1})` }}
-            >
-              <Steam className="absolute -top-3 left-1/2 -translate-x-1/2" />
-              <CoffeeMachine scale={1} />
-            </div>
-
-            {/* Menu Board */}
-            <div className="absolute right-4 -top-10 w-20 h-14 bg-stone-800 rounded border-2 border-amber-700 p-1">
-              <div className="text-[8px] text-amber-400 text-center">MENU</div>
-              <div className="space-y-0.5 mt-1">
-                {gameState.menuItems >= 1 && <div className="h-1 bg-amber-600/50 rounded" />}
-                {gameState.menuItems >= 2 && <div className="h-1 bg-amber-600/50 rounded" />}
-                {gameState.menuItems >= 3 && <div className="h-1 bg-amber-600/50 rounded" />}
-                {gameState.menuItems >= 4 && <div className="h-1 bg-amber-600/50 rounded" />}
-              </div>
-            </div>
-
-            {/* Baristas - Pixel Art */}
-            <div className="absolute bottom-0 left-28 flex gap-2">
-              {Array.from({ length: gameState.baristas }).map((_, i) => (
-                <div key={i} className="relative animate-bounce" style={{ animationDelay: `${i * 0.2}s`, animationDuration: '2s' }}>
-                  <Barista scale={1} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Customers - Pixel Art */}
-        <div className="absolute bottom-32 left-0 right-0 flex justify-center gap-6 px-4">
-          {customers.map((customer, idx) => (
-            <button
-              key={customer.id}
-              onClick={() => serveCustomer(customer.id)}
-              className="relative group transition-transform hover:scale-110 active:scale-95"
-            >
-              {/* Pixel Art Customer */}
-              <div className="relative">
-                <PixelCustomer scale={1.2} />
-              </div>
-              {/* Order bubble with coffee icon */}
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-stone-800 px-2 py-1 rounded-lg text-xs font-bold shadow-lg whitespace-nowrap flex items-center gap-1">
-                <span className="inline-block w-4 h-4">
-                  <CoffeeCup scale={0.4} />
-                </span>
-                {customer.order}
-                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45" />
-              </div>
-              {/* Patience bar */}
-              <div className="absolute -bottom-3 left-0 right-0 h-2 bg-stone-700 rounded-full overflow-hidden shadow-inner">
-                <div
-                  className="h-full transition-all duration-100"
-                  style={{
-                    width: `${customer.patience}%`,
-                    backgroundColor: customer.patience > 50 ? '#22c55e' : customer.patience > 25 ? '#eab308' : '#ef4444',
-                  }}
-                />
-              </div>
-              {/* Tip preview */}
-              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-xs text-amber-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                +{Math.floor(customer.tip * (1 + customer.patience / 100))}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Floating numbers */}
-        {floats.map(f => (
-          <div
-            key={f.id}
-            className="absolute bottom-40 text-xl font-bold text-green-400 pointer-events-none"
-            style={{
-              left: `${f.x}%`,
-              animation: 'floatUp 1s ease-out forwards',
-            }}
-          >
-            +{f.value}
-          </div>
-        ))}
-
-        {/* Tap hint */}
-        {customers.length > 0 && gameState.baristas === 0 && (
-          <div className="absolute bottom-40 left-1/2 -translate-x-1/2 text-amber-400 text-xs animate-pulse bg-stone-900/80 px-3 py-1 rounded-full">
-            TAP customers to serve them!
-          </div>
-        )}
-      </div>
-
-      {/* Shop Tabs */}
-      <div className="bg-stone-800 border-y border-amber-900/50">
-        <div className="flex max-w-md mx-auto">
-          {(['upgrades', 'prestige', 'noun'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setShopTab(tab)}
-              className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                shopTab === tab ? 'bg-amber-800 text-amber-100' : 'text-amber-500 hover:bg-stone-700'
-              }`}
-            >
-              {tab === 'upgrades' && 'UPGRADES'}
-              {tab === 'prestige' && 'PRESTIGE'}
-              {tab === 'noun' && '$NOUN'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Shop Content */}
-      <div className="max-w-md mx-auto p-4 space-y-3 pb-20">
-        {shopTab === 'upgrades' && (
-          <>
-            <UpgradeCard
-              name="Hire Barista"
-              description="Auto-serves customers"
-              level={gameState.baristas}
-              maxLevel={5}
-              cost={BARISTA_COSTS[gameState.baristas]}
-              coins={gameState.coins}
-              effect={`+2/sec, ${gameState.baristas + 1} auto-serve`}
-              onBuy={() => buyUpgrade('baristas')}
-            />
-            <UpgradeCard
-              name="Coffee Machine"
-              description="Faster brewing"
-              level={gameState.machineLevel}
-              maxLevel={5}
-              cost={MACHINE_COSTS[gameState.machineLevel - 1]}
-              coins={gameState.coins}
-              effect={`${(1 + gameState.machineLevel * 0.5).toFixed(1)}x speed`}
-              onBuy={() => buyUpgrade('machineLevel')}
-            />
-            <UpgradeCard
-              name="Decorations"
-              description="Attract more tips"
-              level={gameState.decorLevel}
-              maxLevel={4}
-              cost={DECOR_COSTS[gameState.decorLevel]}
-              coins={gameState.coins}
-              effect={`${(1 + gameState.decorLevel * 0.25).toFixed(2)}x tips`}
-              onBuy={() => buyUpgrade('decorLevel')}
-            />
-            <UpgradeCard
-              name="Menu Items"
-              description="More variety = more customers"
-              level={gameState.menuItems}
-              maxLevel={5}
-              cost={MENU_COSTS[gameState.menuItems - 1]}
-              coins={gameState.coins}
-              effect={`${(1 + gameState.menuItems * 0.3).toFixed(1)}x earnings`}
-              onBuy={() => buyUpgrade('menuItems')}
-            />
-          </>
-        )}
-
-        {shopTab === 'prestige' && (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-4 text-amber-300 font-bold">NEW LOCATION</div>
-            <h3 className="text-lg text-amber-400 mb-2">Expand your empire</h3>
-            <p className="text-amber-500 text-sm mb-4">
-              Reset your progress for a permanent {(1.5 + gameState.prestigeLevel * 0.5).toFixed(1)}x multiplier
-            </p>
-            <div className="text-amber-400 mb-4">
-              {gameState.customersServed >= 100
-                ? 'Ready to expand!'
-                : `Serve ${100 - gameState.customersServed} more customers`}
-            </div>
-            <button
-              onClick={prestige}
-              disabled={gameState.customersServed < 100}
-              className={`px-8 py-3 rounded-xl font-bold transition-all ${
-                gameState.customersServed >= 100
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
-                  : 'bg-stone-700 text-stone-500'
-              }`}
-            >
-              Prestige →
-            </button>
-          </div>
-        )}
-
-        {shopTab === 'noun' && (
-          <div className="text-center py-6">
-            <div className="text-3xl mb-4 font-mono text-purple-300">{"⌐◨-◨"}</div>
-            <h3 className="text-xl font-bold text-purple-300 mb-4">$NOUN Holder Benefits</h3>
-            <div className="space-y-2 text-left bg-purple-900/20 rounded-xl p-4 border border-purple-500/30">
-              <div className="flex items-center gap-2">
-                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
-                  {gameState.nounHolder ? '✓' : '○'}
-                </span>
-                <span className="text-purple-200">Permanent 2x earnings</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
-                  {gameState.nounHolder ? '✓' : '○'}
-                </span>
-                <span className="text-purple-200">Exclusive Noun Barista (coming soon)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
-                  {gameState.nounHolder ? '✓' : '○'}
-                </span>
-                <span className="text-purple-200">Golden decorations (coming soon)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={gameState.nounHolder ? 'text-green-400' : 'text-stone-500'}>
-                  {gameState.nounHolder ? '✓' : '○'}
-                </span>
-                <span className="text-purple-200">Leaderboard VIP badge</span>
-              </div>
-            </div>
-            {!gameState.nounHolder && (
-              <button className="mt-6 px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-colors">
-                Get $NOUN to unlock →
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+    <div
+      className="fixed pointer-events-none font-bold text-2xl z-50"
+      style={{
+        left: x,
+        top: y,
+        animation: 'floatUp 1s ease-out forwards',
+        color: value >= 100 ? '#fbbf24' : value >= 10 ? '#22c55e' : '#ffffff',
+        textShadow: '0 0 10px currentColor',
+      }}
+    >
+      +{formatNumber(value)}
     </div>
   );
 }
 
-function UpgradeCard({
-  name,
-  description,
-  level,
-  maxLevel,
-  cost,
-  coins,
-  effect,
-  onBuy,
-}: {
-  name: string;
-  description: string;
-  level: number;
-  maxLevel: number;
-  cost?: number;
-  coins: number;
-  effect: string;
-  onBuy: () => void;
-}) {
-  const maxed = level >= maxLevel;
-  const canAfford = cost !== undefined && coins >= cost;
+// Golden Bean Event
+function GoldenBean({ onCollect, onExpire }: { onCollect: () => void; onExpire: () => void }) {
+  const [position] = useState(() => ({
+    x: 20 + Math.random() * 60,
+    y: 30 + Math.random() * 40,
+  }));
+
+  useEffect(() => {
+    const timer = setTimeout(onExpire, 7000);
+    return () => clearTimeout(timer);
+  }, [onExpire]);
 
   return (
     <button
-      onClick={onBuy}
-      disabled={maxed || !canAfford}
-      className={`w-full p-4 rounded-xl text-left transition-all ${
-        maxed
-          ? 'bg-green-900/20 border border-green-700/30'
+      onClick={onCollect}
+      className="fixed z-40 animate-pulse cursor-pointer transition-transform hover:scale-125"
+      style={{
+        left: `${position.x}%`,
+        top: `${position.y}%`,
+        animation: 'bounce 0.5s ease-in-out infinite, glow 1s ease-in-out infinite alternate',
+      }}
+    >
+      <div className="text-5xl" style={{ filter: 'drop-shadow(0 0 20px gold)' }}>
+        &#9749;
+      </div>
+      <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-yellow-400 font-bold whitespace-nowrap bg-black/50 px-2 rounded">
+        GOLDEN BEAN!
+      </div>
+    </button>
+  );
+}
+
+export default function CoffeeShopGame({ fid }: { fid: number }) {
+  const [state, setState] = useState<GameState>({
+    coffee: 0,
+    totalCoffee: 0,
+    coffeePerTap: 1,
+    coffeePerSecond: 0,
+    prestigeLevel: 0,
+    prestigeMultiplier: 1,
+    upgrades: {
+      fingers: 0,
+      autoBrewer: 0,
+      espresso: 0,
+      barista: 0,
+      franchise: 0,
+    },
+    unlocks: {
+      autoBrewer: false,
+      espresso: false,
+      barista: false,
+      franchise: false,
+      prestige: false,
+      goldenBeans: false,
+    },
+    milestonesClaimed: [],
+  });
+
+  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; value: number }>>([]);
+  const [shake, setShake] = useState(false);
+  const [goldenBean, setGoldenBean] = useState(false);
+  const [boostActive, setBoostActive] = useState<{ multiplier: number; endsAt: number } | null>(null);
+  const [tapScale, setTapScale] = useState(1);
+  const [newUnlock, setNewUnlock] = useState<string | null>(null);
+
+  const particleId = useRef(0);
+
+  // Calculate production rates
+  const calculateRates = useCallback((s: GameState) => {
+    const basePerTap = 1 + s.upgrades.fingers;
+    const basePerSecond =
+      s.upgrades.autoBrewer * 1 +
+      s.upgrades.espresso * 5 +
+      s.upgrades.barista * 20;
+
+    const franchiseMultiplier = Math.pow(2, s.upgrades.franchise);
+    const boostMult = boostActive && Date.now() < boostActive.endsAt ? boostActive.multiplier : 1;
+
+    return {
+      perTap: Math.floor(basePerTap * franchiseMultiplier * s.prestigeMultiplier * boostMult),
+      perSecond: Math.floor(basePerSecond * franchiseMultiplier * s.prestigeMultiplier * boostMult),
+    };
+  }, [boostActive]);
+
+  // Check for unlocks
+  useEffect(() => {
+    setState(prev => {
+      const newUnlocks = { ...prev.unlocks };
+      let changed = false;
+      let unlockName = '';
+
+      if (!newUnlocks.autoBrewer && prev.totalCoffee >= 25) {
+        newUnlocks.autoBrewer = true;
+        changed = true;
+        unlockName = 'Auto-Brewer';
+      }
+      if (!newUnlocks.espresso && prev.totalCoffee >= 200) {
+        newUnlocks.espresso = true;
+        changed = true;
+        unlockName = 'Espresso Machine';
+      }
+      if (!newUnlocks.barista && prev.totalCoffee >= 2000) {
+        newUnlocks.barista = true;
+        changed = true;
+        unlockName = 'Barista';
+      }
+      if (!newUnlocks.franchise && prev.totalCoffee >= 20000) {
+        newUnlocks.franchise = true;
+        changed = true;
+        unlockName = 'Franchise';
+      }
+      if (!newUnlocks.prestige && prev.totalCoffee >= 100000) {
+        newUnlocks.prestige = true;
+        changed = true;
+        unlockName = 'PRESTIGE';
+      }
+      if (!newUnlocks.goldenBeans && prev.totalCoffee >= 500) {
+        newUnlocks.goldenBeans = true;
+        changed = true;
+      }
+
+      if (changed) {
+        if (unlockName) {
+          setNewUnlock(unlockName);
+          setTimeout(() => setNewUnlock(null), 3000);
+        }
+        return { ...prev, unlocks: newUnlocks };
+      }
+      return prev;
+    });
+  }, [state.totalCoffee]);
+
+  // Auto production
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setState(prev => {
+        const rates = calculateRates(prev);
+        if (rates.perSecond === 0) return prev;
+        return {
+          ...prev,
+          coffee: prev.coffee + rates.perSecond,
+          totalCoffee: prev.totalCoffee + rates.perSecond,
+        };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [calculateRates]);
+
+  // Golden bean spawner
+  useEffect(() => {
+    if (!state.unlocks.goldenBeans) return;
+
+    const spawn = () => {
+      if (Math.random() < 0.15) { // 15% chance every check
+        setGoldenBean(true);
+      }
+    };
+
+    const interval = setInterval(spawn, 15000); // Check every 15 seconds
+    return () => clearInterval(interval);
+  }, [state.unlocks.goldenBeans]);
+
+  // Handle tap
+  const handleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const rates = calculateRates(state);
+    const earned = rates.perTap;
+
+    // Update state
+    setState(prev => ({
+      ...prev,
+      coffee: prev.coffee + earned,
+      totalCoffee: prev.totalCoffee + earned,
+    }));
+
+    // Visual feedback
+    setTapScale(0.85);
+    setTimeout(() => setTapScale(1), 100);
+
+    // Particles
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const x = rect.left + rect.width / 2 + (Math.random() - 0.5) * 60;
+    const y = rect.top + (Math.random() - 0.5) * 40;
+
+    setParticles(prev => [...prev, { id: particleId.current++, x, y, value: earned }]);
+
+    // Big purchase shake
+    if (earned >= 100) {
+      setShake(true);
+      setTimeout(() => setShake(false), 100);
+    }
+  }, [state, calculateRates]);
+
+  // Handle upgrade purchase
+  const buyUpgrade = useCallback((upgrade: keyof typeof UPGRADES) => {
+    const cost = getUpgradeCost(upgrade, state.upgrades[upgrade]);
+    if (state.coffee < cost) return;
+    if (state.upgrades[upgrade] >= UPGRADES[upgrade].maxLevel) return;
+
+    setState(prev => ({
+      ...prev,
+      coffee: prev.coffee - cost,
+      upgrades: {
+        ...prev.upgrades,
+        [upgrade]: prev.upgrades[upgrade] + 1,
+      },
+    }));
+
+    // Shake on purchase
+    setShake(true);
+    setTimeout(() => setShake(false), 150);
+  }, [state]);
+
+  // Handle golden bean collection
+  const collectGoldenBean = useCallback(() => {
+    const effects = [
+      { name: 'FRENZY', multiplier: 7, duration: 30000 },
+      { name: 'COFFEE RUSH', multiplier: 3, duration: 60000 },
+      { name: 'MEGA BREW', multiplier: 10, duration: 15000 },
+    ];
+    const effect = effects[Math.floor(Math.random() * effects.length)];
+
+    setBoostActive({ multiplier: effect.multiplier, endsAt: Date.now() + effect.duration });
+    setGoldenBean(false);
+
+    // Big shake
+    setShake(true);
+    setTimeout(() => setShake(false), 300);
+
+    setNewUnlock(`${effect.name}! ${effect.multiplier}x for ${effect.duration / 1000}s`);
+    setTimeout(() => setNewUnlock(null), 3000);
+  }, []);
+
+  // Handle prestige
+  const prestige = useCallback(() => {
+    if (state.totalCoffee < 100000) return;
+
+    const newMultiplier = state.prestigeMultiplier + 0.5;
+
+    setState({
+      coffee: 0,
+      totalCoffee: 0,
+      coffeePerTap: 1,
+      coffeePerSecond: 0,
+      prestigeLevel: state.prestigeLevel + 1,
+      prestigeMultiplier: newMultiplier,
+      upgrades: {
+        fingers: 0,
+        autoBrewer: 0,
+        espresso: 0,
+        barista: 0,
+        franchise: 0,
+      },
+      unlocks: {
+        autoBrewer: false,
+        espresso: false,
+        barista: false,
+        franchise: false,
+        prestige: false,
+        goldenBeans: false,
+      },
+      milestonesClaimed: state.milestonesClaimed,
+    });
+
+    setNewUnlock(`PRESTIGE ${state.prestigeLevel + 1}! ${newMultiplier}x forever!`);
+    setTimeout(() => setNewUnlock(null), 4000);
+  }, [state]);
+
+  const rates = calculateRates(state);
+  const boostTimeLeft = boostActive && Date.now() < boostActive.endsAt
+    ? Math.ceil((boostActive.endsAt - Date.now()) / 1000)
+    : 0;
+
+  return (
+    <div className={`min-h-screen bg-gradient-to-b from-amber-950 via-stone-900 to-stone-950 text-amber-50 ${shake ? 'animate-shake' : ''}`}>
+      {/* Particles */}
+      {particles.map(p => (
+        <Particle
+          key={p.id}
+          x={p.x}
+          y={p.y}
+          value={p.value}
+          onComplete={() => setParticles(prev => prev.filter(pp => pp.id !== p.id))}
+        />
+      ))}
+
+      {/* Golden Bean */}
+      {goldenBean && (
+        <GoldenBean
+          onCollect={collectGoldenBean}
+          onExpire={() => setGoldenBean(false)}
+        />
+      )}
+
+      {/* New Unlock Banner */}
+      {newUnlock && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-yellow-600 to-amber-600 text-white px-6 py-3 rounded-full font-bold text-lg shadow-2xl animate-bounce">
+          NEW: {newUnlock}
+        </div>
+      )}
+
+      {/* Boost Active Banner */}
+      {boostTimeLeft > 0 && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 bg-purple-600 text-white px-4 py-2 rounded-full font-bold text-sm">
+          {boostActive?.multiplier}x BOOST - {boostTimeLeft}s
+        </div>
+      )}
+
+      {/* Stats Header */}
+      <header className="pt-8 pb-4 text-center">
+        {state.prestigeLevel > 0 && (
+          <div className="text-purple-400 text-sm mb-1">
+            Prestige {state.prestigeLevel} ({state.prestigeMultiplier}x)
+          </div>
+        )}
+        <div
+          className="text-6xl font-bold text-amber-200 transition-transform"
+          style={{
+            transform: `scale(${1 + (rates.perSecond > 0 ? 0.02 * Math.sin(Date.now() / 200) : 0)})`,
+            textShadow: '0 0 30px rgba(251, 191, 36, 0.5)',
+          }}
+        >
+          {formatNumber(state.coffee)}
+        </div>
+        <div className="text-amber-400 text-lg mt-2">
+          coffee
+        </div>
+        {rates.perSecond > 0 && (
+          <div className="text-amber-500 text-sm mt-1">
+            +{formatNumber(rates.perSecond)}/sec
+          </div>
+        )}
+      </header>
+
+      {/* The Coffee Cup - TAP TARGET */}
+      <div className="flex justify-center py-8">
+        <button
+          onClick={handleTap}
+          className="relative select-none transition-transform active:scale-90 cursor-pointer"
+          style={{ transform: `scale(${tapScale})` }}
+        >
+          {/* Cup Glow */}
+          <div
+            className="absolute inset-0 rounded-full blur-3xl opacity-50"
+            style={{
+              background: 'radial-gradient(circle, rgba(251,191,36,0.4) 0%, transparent 70%)',
+              transform: 'scale(1.5)',
+            }}
+          />
+
+          {/* The Cup */}
+          <div className="relative w-40 h-48">
+            {/* Steam */}
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex gap-2">
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  className="w-2 rounded-full bg-white/30"
+                  style={{
+                    height: `${20 + Math.random() * 15}px`,
+                    animation: `steam 2s ease-in-out infinite`,
+                    animationDelay: `${i * 0.3}s`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Cup Body */}
+            <div className="absolute inset-x-2 top-4 bottom-0 bg-gradient-to-b from-amber-100 to-amber-200 rounded-b-[60px] rounded-t-lg shadow-2xl border-4 border-amber-300">
+              {/* Coffee Inside */}
+              <div className="absolute inset-3 top-6 bg-gradient-to-b from-amber-800 via-amber-900 to-amber-950 rounded-b-[50px] overflow-hidden">
+                {/* Coffee Surface Shimmer */}
+                <div className="absolute top-0 inset-x-0 h-4 bg-gradient-to-r from-amber-700 via-amber-600 to-amber-700 opacity-80" />
+              </div>
+            </div>
+
+            {/* Handle */}
+            <div className="absolute right-0 top-1/3 w-6 h-14 border-4 border-amber-300 rounded-r-full bg-amber-100" />
+
+            {/* Tap Indicator */}
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-600 text-white text-sm px-4 py-1 rounded-full font-bold shadow-lg animate-pulse">
+              +{formatNumber(rates.perTap)}
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {/* Upgrades */}
+      <div className="px-4 pb-24 space-y-3 max-w-md mx-auto">
+        <h2 className="text-lg font-bold text-amber-300 mb-3">Upgrades</h2>
+
+        {/* Fingers - Always visible */}
+        <UpgradeButton
+          name={UPGRADES.fingers.name}
+          desc={UPGRADES.fingers.desc}
+          level={state.upgrades.fingers}
+          maxLevel={UPGRADES.fingers.maxLevel}
+          cost={getUpgradeCost('fingers', state.upgrades.fingers)}
+          canAfford={state.coffee >= getUpgradeCost('fingers', state.upgrades.fingers)}
+          onClick={() => buyUpgrade('fingers')}
+        />
+
+        {/* Auto-Brewer - Unlocks at 25 total */}
+        {state.unlocks.autoBrewer && (
+          <UpgradeButton
+            name={UPGRADES.autoBrewer.name}
+            desc={UPGRADES.autoBrewer.desc}
+            level={state.upgrades.autoBrewer}
+            maxLevel={UPGRADES.autoBrewer.maxLevel}
+            cost={getUpgradeCost('autoBrewer', state.upgrades.autoBrewer)}
+            canAfford={state.coffee >= getUpgradeCost('autoBrewer', state.upgrades.autoBrewer)}
+            onClick={() => buyUpgrade('autoBrewer')}
+            isNew={state.upgrades.autoBrewer === 0}
+          />
+        )}
+
+        {/* Espresso - Unlocks at 200 total */}
+        {state.unlocks.espresso && (
+          <UpgradeButton
+            name={UPGRADES.espresso.name}
+            desc={UPGRADES.espresso.desc}
+            level={state.upgrades.espresso}
+            maxLevel={UPGRADES.espresso.maxLevel}
+            cost={getUpgradeCost('espresso', state.upgrades.espresso)}
+            canAfford={state.coffee >= getUpgradeCost('espresso', state.upgrades.espresso)}
+            onClick={() => buyUpgrade('espresso')}
+            isNew={state.upgrades.espresso === 0}
+          />
+        )}
+
+        {/* Barista - Unlocks at 2000 total */}
+        {state.unlocks.barista && (
+          <UpgradeButton
+            name={UPGRADES.barista.name}
+            desc={UPGRADES.barista.desc}
+            level={state.upgrades.barista}
+            maxLevel={UPGRADES.barista.maxLevel}
+            cost={getUpgradeCost('barista', state.upgrades.barista)}
+            canAfford={state.coffee >= getUpgradeCost('barista', state.upgrades.barista)}
+            onClick={() => buyUpgrade('barista')}
+            isNew={state.upgrades.barista === 0}
+          />
+        )}
+
+        {/* Franchise - Unlocks at 20000 total */}
+        {state.unlocks.franchise && (
+          <UpgradeButton
+            name={UPGRADES.franchise.name}
+            desc={UPGRADES.franchise.desc}
+            level={state.upgrades.franchise}
+            maxLevel={UPGRADES.franchise.maxLevel}
+            cost={getUpgradeCost('franchise', state.upgrades.franchise)}
+            canAfford={state.coffee >= getUpgradeCost('franchise', state.upgrades.franchise)}
+            onClick={() => buyUpgrade('franchise')}
+            isNew={state.upgrades.franchise === 0}
+          />
+        )}
+
+        {/* Prestige - Unlocks at 100000 total */}
+        {state.unlocks.prestige && (
+          <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-xl border border-purple-500/50">
+            <h3 className="text-purple-300 font-bold text-lg">Open New Location</h3>
+            <p className="text-purple-200 text-sm mt-1">
+              Reset everything for a permanent +0.5x multiplier
+            </p>
+            <p className="text-purple-400 text-xs mt-2">
+              Current: {state.prestigeMultiplier}x → Next: {state.prestigeMultiplier + 0.5}x
+            </p>
+            <button
+              onClick={prestige}
+              className="mt-3 w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg font-bold transition-all hover:scale-[1.02] active:scale-95"
+            >
+              PRESTIGE
+            </button>
+          </div>
+        )}
+
+        {/* Progress hints */}
+        {!state.unlocks.autoBrewer && (
+          <div className="text-center text-amber-600 text-sm mt-4">
+            Brew {25 - state.totalCoffee} more to unlock something new...
+          </div>
+        )}
+      </div>
+
+      {/* CSS for animations */}
+      <style jsx global>{`
+        @keyframes floatUp {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-80px) scale(1.5); }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        .animate-shake {
+          animation: shake 0.15s ease-in-out;
+        }
+        @keyframes glow {
+          0% { filter: drop-shadow(0 0 10px gold); }
+          100% { filter: drop-shadow(0 0 30px gold); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Upgrade Button Component
+function UpgradeButton({
+  name,
+  desc,
+  level,
+  maxLevel,
+  cost,
+  canAfford,
+  onClick,
+  isNew = false,
+}: {
+  name: string;
+  desc: string;
+  level: number;
+  maxLevel: number;
+  cost: number;
+  canAfford: boolean;
+  onClick: () => void;
+  isNew?: boolean;
+}) {
+  const isMaxed = level >= maxLevel;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={isMaxed || !canAfford}
+      className={`w-full p-4 rounded-xl text-left transition-all relative overflow-hidden ${
+        isMaxed
+          ? 'bg-green-900/30 border border-green-700/30'
           : canAfford
-            ? 'bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/40 hover:scale-[1.02]'
-            : 'bg-stone-800/50 border border-stone-700/30 opacity-60'
+            ? 'bg-amber-800/60 border border-amber-600/50 hover:bg-amber-700/60 hover:scale-[1.02] active:scale-[0.98]'
+            : 'bg-stone-800/40 border border-stone-700/30 opacity-60'
       }`}
     >
-      <div className="flex justify-between items-start">
+      {isNew && (
+        <div className="absolute top-2 right-2 bg-yellow-500 text-black text-xs px-2 py-0.5 rounded font-bold animate-pulse">
+          NEW
+        </div>
+      )}
+      <div className="flex justify-between items-center">
         <div>
-          <div className="font-bold text-amber-200">{name}</div>
-          <div className="text-xs text-amber-500">{description}</div>
-          <div className="text-xs text-green-400 mt-1">{effect}</div>
+          <div className="font-bold text-amber-100">{name}</div>
+          <div className="text-xs text-amber-400">{desc}</div>
         </div>
         <div className="text-right">
-          <div className="text-xs text-amber-600">Lv.{level}/{maxLevel}</div>
-          {maxed ? (
-            <div className="text-green-400 text-sm">MAX</div>
+          <div className="text-xs text-amber-500">Lv {level}/{maxLevel}</div>
+          {isMaxed ? (
+            <div className="text-green-400 font-bold">MAX</div>
           ) : (
-            <div className={`font-bold ${canAfford ? 'text-amber-300' : 'text-stone-500'}`}>
-              {cost?.toLocaleString()}
+            <div className={`font-bold ${canAfford ? 'text-amber-200' : 'text-stone-500'}`}>
+              {formatNumber(cost)}
             </div>
           )}
         </div>
