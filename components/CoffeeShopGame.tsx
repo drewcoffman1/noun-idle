@@ -3,184 +3,61 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 // ============================================
-// PIXEL ART SPRITES (CSS box-shadow technique)
+// COZY COFFEE SHOP IDLE GAME
 // ============================================
-const P = 3; // pixel size
 
-const COLORS = {
-  black: '#000000',
-  outline: '#1a1a1a',
-  darkBrown: '#4a3728',
-  brown: '#6b5344',
-  medBrown: '#8b7355',
-  lightBrown: '#a89070',
-  tan: '#c4a882',
-  cream: '#f5f0e0',
-  white: '#ffffff',
-  offWhite: '#e8e4d8',
-  shadow: '#d4d0c4',
-  coffee: '#3d2314',
-  coffeeMed: '#5c3d2e',
-  coffeeLight: '#a08060',
-  steam: '#c8b8b0',
-};
-
-// Coffee Mug - 24x22 pixels (matching reference exactly)
-const MUG_SPRITE = `
-........................
-........................
-......kkkkkkkkkkkk......
-.....kcccccccccccck.....
-.....kcccccccccccck.....
-....kccLLLLLLLLLLcck....
-....kccCCCCCCCCCCcck....
-....kccCCCCCCCCCCcckkk..
-....kcccccccccccccckWk..
-....kcccccccccccccckWk..
-....kcSScccccccccSckWk..
-....kcSScccccccccSckWk..
-....kcSScccccccccSckkk..
-....kcSSccccccccSSck....
-.....kccccccccccck......
-.....kkccccccccckk......
-......kkkkkkkkkk........
-....kkkkkkkkkkkkkk......
-...kcccccccccccccck.....
-...kkkkkkkkkkkkkkkk.....
-........................
-........................
-`.trim().split('\n');
-
-// Coffee Bag - 14x16 pixels
-const BAG_SPRITE = `
-..............
-...wwwwwwww...
-..wttttttttw..
-..wttttttttw..
-.wttttttttttw.
-.wttttttttttw.
-.wtttbbbbtttw.
-.wttbBBBBbttw.
-.wttbBBBBbttw.
-.wtttbbbbtttw.
-.wttttttttttw.
-.wttttttttttw.
-.wttttttttttw.
-.wttttttttttw.
-..wwwwwwwwww..
-..............
-`.trim().split('\n');
-
-// Coffee Bean (golden) - 10x8 pixels
-const BEAN_SPRITE = `
-..........
-...bBBb...
-..bBBBBb..
-.bBBbBBBb.
-.bBBbBBBb.
-..bBBBBb..
-...bBBb...
-..........
-`.trim().split('\n');
-
-// Steam wisps - 14x16 pixels (scattered like reference)
-const STEAM_SPRITE = `
-..............
-.....s........
-....s.........
-.......s......
-......s.......
-....s...s.....
-.....s........
-..s...........
-.....s..s.....
-....s.........
-.......s......
-......s.......
-.....s........
-..............
-..............
-..............
-`.trim().split('\n');
-
-function spriteToBoxShadow(sprite: string[], colors: Record<string, string>, pixelSize: number): string {
-  const shadows: string[] = [];
-  const colorMap: Record<string, string> = {
-    'w': colors.white,
-    'W': colors.white,
-    'c': colors.cream,
-    'o': colors.offWhite,
-    'S': colors.shadow,
-    't': colors.tan,
-    'l': colors.lightBrown,
-    'L': colors.coffeeLight,
-    'm': colors.medBrown,
-    'b': colors.brown,
-    'B': colors.darkBrown,
-    'k': colors.black,
-    's': colors.steam,
-    'C': colors.coffee,
-    'M': colors.coffeeMed,
-  };
-
-  sprite.forEach((row, y) => {
-    [...row].forEach((char, x) => {
-      if (char !== '.' && colorMap[char]) {
-        shadows.push(`${x * pixelSize}px ${y * pixelSize}px 0 ${colorMap[char]}`);
-      }
-    });
-  });
-
-  return shadows.join(',');
-}
-
-function PixelSprite({ sprite, size = P, className = '' }: { sprite: string[]; size?: number; className?: string }) {
-  const width = sprite[0]?.length || 0;
-  const height = sprite.length;
-  const boxShadow = spriteToBoxShadow(sprite, COLORS, size);
-
-  return (
-    <div className={className} style={{ width: width * size, height: height * size, position: 'relative' }}>
-      <div style={{
-        position: 'absolute',
-        width: size,
-        height: size,
-        boxShadow,
-        imageRendering: 'pixelated',
-      }} />
-    </div>
-  );
-}
-
-// ============================================
-// GAME LOGIC
-// ============================================
 interface GameState {
   coffee: number;
   totalCoffee: number;
   prestigeLevel: number;
   prestigeMultiplier: number;
-  upgrades: { fingers: number; autoBrewer: number; espresso: number; barista: number; franchise: number };
-  unlocks: { autoBrewer: boolean; espresso: boolean; barista: boolean; franchise: boolean; prestige: boolean; goldenBeans: boolean };
+  upgrades: {
+    tapPower: number;
+    coffeeMachine: number;
+    barista: number;
+    pastryCase: number;
+    cozySeating: number;
+    bookshelf: number;
+    plants: number;
+    lighting: number;
+  };
+  unlocks: Set<string>;
 }
 
 const UPGRADES = {
-  fingers: { name: 'Tap Power', desc: '+1 per tap', baseCost: 10, mult: 1.5, max: 50 },
-  autoBrewer: { name: 'Auto Brew', desc: '+1/sec', baseCost: 50, mult: 1.4, max: 50, unlock: 25 },
-  espresso: { name: 'Espresso', desc: '+5/sec', baseCost: 500, mult: 1.5, max: 30, unlock: 200 },
-  barista: { name: 'Barista', desc: '+20/sec', baseCost: 5000, mult: 1.6, max: 20, unlock: 2000 },
-  franchise: { name: 'Franchise', desc: '2x all', baseCost: 50000, mult: 3, max: 5, unlock: 20000 },
+  tapPower: { name: 'Better Beans', desc: '+1 per tap', cost: 10, mult: 1.5, max: 50, perTap: 1, perSec: 0 },
+  coffeeMachine: { name: 'Coffee Machine', desc: '+2/sec each', cost: 100, mult: 1.8, max: 10, perTap: 0, perSec: 2, unlock: 50 },
+  barista: { name: 'Barista', desc: '+5/sec each', cost: 500, mult: 2.0, max: 5, perTap: 0, perSec: 5, unlock: 200 },
+  pastryCase: { name: 'Pastry Case', desc: '+10/sec', cost: 2000, mult: 2.2, max: 3, perTap: 0, perSec: 10, unlock: 1000 },
+  cozySeating: { name: 'Cozy Seating', desc: '+15/sec', cost: 5000, mult: 2.5, max: 4, perTap: 0, perSec: 15, unlock: 3000 },
+  bookshelf: { name: 'Bookshelf', desc: '+8/sec', cost: 3000, mult: 2.0, max: 3, perTap: 0, perSec: 8, unlock: 2000 },
+  plants: { name: 'Plants', desc: '+3/sec', cost: 800, mult: 1.6, max: 6, perTap: 0, perSec: 3, unlock: 400 },
+  lighting: { name: 'String Lights', desc: '+12/sec', cost: 4000, mult: 2.3, max: 3, perTap: 0, perSec: 12, unlock: 2500 },
 };
 
 const getCost = (key: keyof typeof UPGRADES, level: number) =>
-  Math.floor(UPGRADES[key].baseCost * Math.pow(UPGRADES[key].mult, level));
+  Math.floor(UPGRADES[key].cost * Math.pow(UPGRADES[key].mult, level));
 
 const fmt = (n: number): string => {
-  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return Math.floor(n).toLocaleString();
+};
+
+// Warm cozy color palette
+const COLORS = {
+  bg: '#f5ebe0',
+  bgDark: '#e8dcc8',
+  wood: '#8b6914',
+  woodDark: '#5c4a2a',
+  woodLight: '#b8956c',
+  cream: '#fff8f0',
+  brown: '#4a3728',
+  accent: '#c4956a',
+  warm: '#e8a87c',
+  plant: '#6b8c5a',
+  plantDark: '#4a6b3a',
 };
 
 export default function CoffeeShopGame({ fid }: { fid: number }) {
@@ -189,47 +66,57 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
     totalCoffee: 0,
     prestigeLevel: 0,
     prestigeMultiplier: 1,
-    upgrades: { fingers: 0, autoBrewer: 0, espresso: 0, barista: 0, franchise: 0 },
-    unlocks: { autoBrewer: false, espresso: false, barista: false, franchise: false, prestige: false, goldenBeans: false },
+    upgrades: {
+      tapPower: 0,
+      coffeeMachine: 0,
+      barista: 0,
+      pastryCase: 0,
+      cozySeating: 0,
+      bookshelf: 0,
+      plants: 0,
+      lighting: 0,
+    },
+    unlocks: new Set(['tapPower']),
   });
 
   const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; value: number }>>([]);
-  const [goldenBean, setGoldenBean] = useState<{ x: number; y: number } | null>(null);
-  const [boost, setBoost] = useState<{ mult: number; end: number } | null>(null);
-  const [tapAnim, setTapAnim] = useState(false);
+  const [steamParticles, setSteamParticles] = useState<Array<{ id: number; x: number; delay: number }>>([]);
   const [notification, setNotification] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'shop' | 'upgrades'>('shop');
   const particleId = useRef(0);
 
   // Calculate rates
   const getPerTap = useCallback(() => {
-    const base = 1 + state.upgrades.fingers;
-    const franchise = Math.pow(2, state.upgrades.franchise);
-    const boostMult = boost && Date.now() < boost.end ? boost.mult : 1;
-    return Math.floor(base * franchise * state.prestigeMultiplier * boostMult);
-  }, [state, boost]);
+    const base = 1 + state.upgrades.tapPower * UPGRADES.tapPower.perTap;
+    return Math.floor(base * state.prestigeMultiplier);
+  }, [state.upgrades.tapPower, state.prestigeMultiplier]);
 
   const getPerSec = useCallback(() => {
-    const base = state.upgrades.autoBrewer * 1 + state.upgrades.espresso * 5 + state.upgrades.barista * 20;
-    const franchise = Math.pow(2, state.upgrades.franchise);
-    const boostMult = boost && Date.now() < boost.end ? boost.mult : 1;
-    return Math.floor(base * franchise * state.prestigeMultiplier * boostMult);
-  }, [state, boost]);
+    let total = 0;
+    (Object.keys(UPGRADES) as Array<keyof typeof UPGRADES>).forEach(key => {
+      total += state.upgrades[key] * UPGRADES[key].perSec;
+    });
+    return Math.floor(total * state.prestigeMultiplier);
+  }, [state.upgrades, state.prestigeMultiplier]);
 
   // Check unlocks
   useEffect(() => {
     setState(prev => {
-      const u = { ...prev.unlocks };
+      const newUnlocks = new Set(prev.unlocks);
       let notify = '';
-      if (!u.autoBrewer && prev.totalCoffee >= 25) { u.autoBrewer = true; notify = 'Auto Brew Unlocked!'; }
-      if (!u.espresso && prev.totalCoffee >= 200) { u.espresso = true; notify = 'Espresso Unlocked!'; }
-      if (!u.barista && prev.totalCoffee >= 2000) { u.barista = true; notify = 'Barista Unlocked!'; }
-      if (!u.franchise && prev.totalCoffee >= 20000) { u.franchise = true; notify = 'Franchise Unlocked!'; }
-      if (!u.prestige && prev.totalCoffee >= 100000) { u.prestige = true; notify = 'Prestige Unlocked!'; }
-      if (!u.goldenBeans && prev.totalCoffee >= 500) u.goldenBeans = true;
+
+      (Object.keys(UPGRADES) as Array<keyof typeof UPGRADES>).forEach(key => {
+        const upgrade = UPGRADES[key];
+        if ('unlock' in upgrade && !newUnlocks.has(key) && prev.totalCoffee >= (upgrade as any).unlock) {
+          newUnlocks.add(key);
+          notify = `${upgrade.name} Unlocked!`;
+        }
+      });
+
       if (notify) {
         setNotification(notify);
         setTimeout(() => setNotification(null), 2500);
-        return { ...prev, unlocks: u };
+        return { ...prev, unlocks: newUnlocks };
       }
       return prev;
     });
@@ -240,42 +127,41 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
     const interval = setInterval(() => {
       const perSec = getPerSec();
       if (perSec > 0) {
-        setState(prev => ({ ...prev, coffee: prev.coffee + perSec, totalCoffee: prev.totalCoffee + perSec }));
+        setState(prev => ({
+          ...prev,
+          coffee: prev.coffee + perSec,
+          totalCoffee: prev.totalCoffee + perSec,
+        }));
       }
     }, 1000);
     return () => clearInterval(interval);
   }, [getPerSec]);
 
-  // Golden bean spawner
+  // Steam animation
   useEffect(() => {
-    if (!state.unlocks.goldenBeans) return;
+    if (state.upgrades.coffeeMachine === 0) return;
     const interval = setInterval(() => {
-      if (Math.random() < 0.12 && !goldenBean) {
-        setGoldenBean({ x: 15 + Math.random() * 70, y: 20 + Math.random() * 30 });
-      }
-    }, 18000);
+      setSteamParticles(prev => [
+        ...prev.slice(-10),
+        { id: Date.now(), x: Math.random() * 30, delay: Math.random() * 0.5 }
+      ]);
+    }, 800);
     return () => clearInterval(interval);
-  }, [state.unlocks.goldenBeans, goldenBean]);
-
-  // Golden bean timeout
-  useEffect(() => {
-    if (!goldenBean) return;
-    const timeout = setTimeout(() => setGoldenBean(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [goldenBean]);
+  }, [state.upgrades.coffeeMachine]);
 
   // Tap handler
   const handleTap = (e: React.MouseEvent | React.TouchEvent) => {
     const earned = getPerTap();
-    setState(prev => ({ ...prev, coffee: prev.coffee + earned, totalCoffee: prev.totalCoffee + earned }));
-
-    setTapAnim(true);
-    setTimeout(() => setTapAnim(false), 100);
+    setState(prev => ({
+      ...prev,
+      coffee: prev.coffee + earned,
+      totalCoffee: prev.totalCoffee + earned,
+    }));
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setParticles(prev => [...prev, {
       id: particleId.current++,
-      x: rect.left + rect.width / 2 + (Math.random() - 0.5) * 60,
+      x: rect.left + rect.width / 2 + (Math.random() - 0.5) * 40,
       y: rect.top + 20,
       value: earned,
     }]);
@@ -293,242 +179,296 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
     }
   };
 
-  // Collect golden bean
-  const collectGolden = () => {
-    const effects = [
-      { name: 'FRENZY', mult: 7, dur: 30 },
-      { name: 'LUCKY', mult: 3, dur: 77 },
-      { name: 'OVERDRIVE', mult: 11, dur: 11 },
-    ];
-    const fx = effects[Math.floor(Math.random() * effects.length)];
-    setBoost({ mult: fx.mult, end: Date.now() + fx.dur * 1000 });
-    setGoldenBean(null);
-    setNotification(`${fx.name}! ${fx.mult}x for ${fx.dur}s`);
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // Prestige
-  const prestige = () => {
-    if (state.totalCoffee < 100000) return;
-    const newMult = state.prestigeMultiplier + 0.5;
-    setState({
-      coffee: 0, totalCoffee: 0,
-      prestigeLevel: state.prestigeLevel + 1,
-      prestigeMultiplier: newMult,
-      upgrades: { fingers: 0, autoBrewer: 0, espresso: 0, barista: 0, franchise: 0 },
-      unlocks: { autoBrewer: false, espresso: false, barista: false, franchise: false, prestige: false, goldenBeans: false },
-    });
-    setNotification(`PRESTIGE ${state.prestigeLevel + 1}! ${newMult}x forever`);
-    setTimeout(() => setNotification(null), 3500);
-  };
-
-  const perTap = getPerTap();
   const perSec = getPerSec();
-  const boostLeft = boost && Date.now() < boost.end ? Math.ceil((boost.end - Date.now()) / 1000) : 0;
+  const perTap = getPerTap();
 
   return (
-    <div className="min-h-screen text-stone-900 overflow-hidden" style={{ background: '#f5ebe0' }}>
-      {/* Particles */}
+    <div className="min-h-screen overflow-hidden" style={{ background: COLORS.bg }}>
+      {/* Floating particles */}
       {particles.map(p => (
         <div
           key={p.id}
-          className="fixed pointer-events-none font-black text-xl z-50"
-          style={{ left: p.x, top: p.y, color: COLORS.darkBrown, animation: 'rise 0.8s ease-out forwards' }}
+          className="fixed pointer-events-none font-bold text-lg z-50"
+          style={{ left: p.x, top: p.y, color: COLORS.brown, animation: 'rise 0.8s ease-out forwards' }}
           onAnimationEnd={() => setParticles(prev => prev.filter(x => x.id !== p.id))}
         >
           +{fmt(p.value)}
         </div>
       ))}
 
-      {/* Golden Bean */}
-      {goldenBean && (
-        <button
-          onClick={collectGolden}
-          className="fixed z-50 cursor-pointer transition-transform hover:scale-110"
-          style={{ left: `${goldenBean.x}%`, top: `${goldenBean.y}%`, animation: 'float 1s ease-in-out infinite' }}
-        >
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full blur-xl" style={{ background: 'rgba(255, 200, 50, 0.5)', transform: 'scale(2)' }} />
-            <PixelSprite sprite={BEAN_SPRITE} size={6} />
-          </div>
-          <div className="text-xs font-bold text-amber-700 text-center mt-1 animate-pulse">GOLDEN!</div>
-        </button>
-      )}
-
       {/* Notification */}
       {notification && (
         <div
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-lg font-bold shadow-lg"
-          style={{ background: COLORS.tan, color: COLORS.darkBrown, border: `3px solid ${COLORS.brown}` }}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full font-bold shadow-lg animate-bounce"
+          style={{ background: COLORS.warm, color: COLORS.brown }}
         >
           {notification}
         </div>
       )}
 
-      {/* Boost indicator */}
-      {boostLeft > 0 && (
+      {/* Header */}
+      <header className="p-4 text-center" style={{ background: COLORS.woodDark }}>
+        <h1 className="text-xl font-bold text-amber-100 tracking-wide">NOUN COFFEE</h1>
+        <div className="text-3xl font-black text-white mt-1">{fmt(state.coffee)}</div>
+        {perSec > 0 && <div className="text-amber-200 text-sm">+{fmt(perSec)}/sec</div>}
+      </header>
+
+      {/* ============================================ */}
+      {/* THE COZY COFFEE SHOP SCENE */}
+      {/* ============================================ */}
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ height: '320px', background: `linear-gradient(180deg, ${COLORS.cream} 0%, ${COLORS.bgDark} 100%)` }}
+      >
+        {/* Back wall */}
+        <div className="absolute inset-x-0 top-0 h-40" style={{ background: COLORS.cream }}>
+          {/* Shelves */}
+          <div className="absolute top-8 left-4 right-4 h-3 rounded" style={{ background: COLORS.wood }} />
+          <div className="absolute top-20 left-8 right-8 h-3 rounded" style={{ background: COLORS.wood }} />
+
+          {/* String lights (if owned) */}
+          {state.upgrades.lighting > 0 && (
+            <div className="absolute top-2 left-0 right-0 flex justify-center gap-6">
+              {Array.from({ length: state.upgrades.lighting * 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rounded-full animate-pulse"
+                  style={{
+                    background: ['#ffd54f', '#ff8a65', '#fff59d', '#ffcc80'][i % 4],
+                    animationDelay: `${i * 0.2}s`,
+                    boxShadow: `0 0 8px ${['#ffd54f', '#ff8a65', '#fff59d', '#ffcc80'][i % 4]}`
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Books on shelf (if owned) */}
+          {state.upgrades.bookshelf > 0 && (
+            <div className="absolute top-10 left-6 flex gap-1">
+              {Array.from({ length: state.upgrades.bookshelf * 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-sm"
+                  style={{
+                    width: '8px',
+                    height: `${16 + (i % 3) * 4}px`,
+                    background: ['#8b4513', '#a0522d', '#6b4423', '#4a3520'][i % 4],
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Plants on shelf (if owned) */}
+          {state.upgrades.plants > 0 && (
+            <div className="absolute top-12 right-8 flex gap-3">
+              {Array.from({ length: Math.min(state.upgrades.plants, 3) }).map((_, i) => (
+                <div key={i} className="relative">
+                  <div className="w-4 h-5 rounded-b-lg" style={{ background: '#d4a574' }} />
+                  <div
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full"
+                    style={{ background: COLORS.plant }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Counter */}
         <div
-          className="fixed top-14 left-1/2 -translate-x-1/2 z-40 px-4 py-1 rounded-full text-sm font-bold"
-          style={{ background: COLORS.brown, color: COLORS.cream }}
+          className="absolute bottom-0 left-0 right-0 h-28"
+          style={{ background: `linear-gradient(180deg, ${COLORS.wood} 0%, ${COLORS.woodDark} 100%)` }}
         >
-          {boost?.mult}x BOOST - {boostLeft}s
-        </div>
-      )}
+          {/* Counter top */}
+          <div className="absolute top-0 left-0 right-0 h-4" style={{ background: COLORS.woodLight }} />
 
-      {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6">
+          {/* Coffee Machine (if owned) */}
+          {state.upgrades.coffeeMachine > 0 && (
+            <div className="absolute left-4 -top-16">
+              {/* Machine body */}
+              <div className="relative">
+                <div className="w-16 h-20 rounded-t-lg" style={{ background: '#4a4a4a' }}>
+                  {/* Display */}
+                  <div className="absolute top-2 left-2 right-2 h-6 rounded bg-black/30" />
+                  {/* Buttons */}
+                  <div className="absolute top-10 left-3 flex gap-1">
+                    <div className="w-2 h-2 rounded-full bg-green-400" />
+                    <div className="w-2 h-2 rounded-full bg-red-400" />
+                  </div>
+                </div>
+                {/* Drip tray */}
+                <div className="w-16 h-3 rounded-b" style={{ background: '#3a3a3a' }} />
 
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.darkBrown }}>
-            NOUN COFFEE
-          </h1>
-          {state.prestigeLevel > 0 && (
-            <div className="text-xs font-medium mt-1" style={{ color: COLORS.brown }}>
-              Prestige {state.prestigeLevel} ({state.prestigeMultiplier}x)
+                {/* Steam */}
+                {steamParticles.map(s => (
+                  <div
+                    key={s.id}
+                    className="absolute w-2 h-2 rounded-full opacity-60"
+                    style={{
+                      left: 20 + s.x,
+                      top: -8,
+                      background: 'white',
+                      animation: `steamRise 1.5s ease-out forwards`,
+                      animationDelay: `${s.delay}s`
+                    }}
+                  />
+                ))}
+              </div>
+              {state.upgrades.coffeeMachine > 1 && (
+                <div className="text-[10px] text-center mt-1 text-amber-200">x{state.upgrades.coffeeMachine}</div>
+              )}
             </div>
           )}
-        </div>
 
-        {/* Big Number */}
-        <div className="text-center mb-2">
-          <div className="text-6xl font-black" style={{ color: COLORS.darkBrown }}>
-            {fmt(state.coffee)}
-          </div>
-          <div className="text-sm font-medium tracking-widest uppercase" style={{ color: COLORS.brown }}>
-            coffee brewed
-          </div>
-          {perSec > 0 && (
-            <div className="text-xs mt-1" style={{ color: COLORS.medBrown }}>
-              +{fmt(perSec)} per second
+          {/* Pastry Case (if owned) */}
+          {state.upgrades.pastryCase > 0 && (
+            <div className="absolute left-24 -top-12">
+              <div className="w-20 h-14 rounded-lg border-2" style={{ background: 'rgba(255,255,255,0.9)', borderColor: COLORS.accent }}>
+                <div className="flex gap-1 p-2 flex-wrap">
+                  {Array.from({ length: state.upgrades.pastryCase * 2 }).map((_, i) => (
+                    <div key={i} className="w-3 h-3 rounded-full" style={{ background: ['#d4a574', '#e8c4a0', '#c49a6c'][i % 3] }} />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* THE MUG - Tap Target */}
-        <div className="flex justify-center my-8">
+          {/* Baristas (if owned) */}
+          {state.upgrades.barista > 0 && (
+            <div className="absolute right-4 -top-20 flex gap-2">
+              {Array.from({ length: state.upgrades.barista }).map((_, i) => (
+                <div key={i} className="relative animate-bounce" style={{ animationDuration: '2s', animationDelay: `${i * 0.3}s` }}>
+                  {/* Head */}
+                  <div className="w-6 h-6 rounded-full mx-auto" style={{ background: '#e8c4a0' }}>
+                    <div className="absolute top-2 left-1 w-1 h-1 rounded-full bg-black" />
+                    <div className="absolute top-2 right-1 w-1 h-1 rounded-full bg-black" />
+                  </div>
+                  {/* Body with apron */}
+                  <div className="w-8 h-10 rounded-t-lg mt-1" style={{ background: COLORS.plant }}>
+                    <div className="absolute bottom-0 left-1 right-1 h-4 rounded-b" style={{ background: COLORS.brown }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tap target - Coffee Cup */}
           <button
             onClick={handleTap}
-            className={`relative transition-transform ${tapAnim ? 'scale-90' : 'hover:scale-105'}`}
-            style={{ cursor: 'pointer' }}
+            className="absolute left-1/2 -translate-x-1/2 -top-10 transition-transform active:scale-90 hover:scale-105 cursor-pointer"
           >
-            {/* Steam */}
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2" style={{ animation: 'steam 2s ease-in-out infinite' }}>
-              <PixelSprite sprite={STEAM_SPRITE} size={4} />
-            </div>
-
-            {/* Mug */}
+            {/* Cup */}
             <div className="relative">
-              <PixelSprite sprite={MUG_SPRITE} size={5} />
+              {/* Steam from cup */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-1 opacity-60">
+                <div className="w-1 h-4 rounded-full bg-white/50 animate-pulse" style={{ animationDelay: '0s' }} />
+                <div className="w-1 h-6 rounded-full bg-white/50 animate-pulse" style={{ animationDelay: '0.3s' }} />
+                <div className="w-1 h-4 rounded-full bg-white/50 animate-pulse" style={{ animationDelay: '0.6s' }} />
+              </div>
+
+              {/* Mug body */}
+              <div className="w-14 h-12 rounded-b-2xl border-4" style={{ background: COLORS.cream, borderColor: 'black' }}>
+                {/* Coffee inside */}
+                <div className="absolute top-2 left-1 right-1 bottom-1 rounded-b-xl overflow-hidden">
+                  <div className="h-2" style={{ background: '#c4956a' }} />
+                  <div className="flex-1 h-full" style={{ background: COLORS.brown }} />
+                </div>
+              </div>
+
+              {/* Handle */}
+              <div
+                className="absolute top-2 -right-3 w-4 h-6 rounded-r-full border-4"
+                style={{ borderColor: 'black', background: COLORS.cream }}
+              />
+
+              {/* Saucer */}
+              <div className="w-18 h-2 rounded-full -mx-2 border-2" style={{ background: COLORS.cream, borderColor: 'black', width: '72px' }} />
             </div>
 
-            {/* Tap value */}
-            <div
-              className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-sm font-bold px-2 py-0.5 rounded"
-              style={{ background: COLORS.brown, color: COLORS.cream }}
-            >
+            <div className="text-center mt-2 font-bold px-2 py-1 rounded" style={{ background: COLORS.brown, color: COLORS.cream }}>
               +{fmt(perTap)}
             </div>
           </button>
         </div>
 
-        {/* Upgrades */}
-        <div className="space-y-2 mt-12">
-          <div className="flex items-center gap-2 mb-3">
-            <PixelSprite sprite={BAG_SPRITE} size={2} />
-            <h2 className="font-bold" style={{ color: COLORS.darkBrown }}>Upgrades</h2>
+        {/* Cozy seating area (if owned) */}
+        {state.upgrades.cozySeating > 0 && (
+          <div className="absolute bottom-28 right-4 flex gap-2">
+            {Array.from({ length: Math.min(state.upgrades.cozySeating, 2) }).map((_, i) => (
+              <div key={i} className="relative">
+                {/* Chair */}
+                <div className="w-8 h-6 rounded-t-lg" style={{ background: '#b8860b' }} />
+                <div className="w-10 h-2 rounded -mx-1" style={{ background: '#8b6914' }} />
+                {/* Table */}
+                {i === 0 && (
+                  <div className="absolute -right-6 top-0">
+                    <div className="w-6 h-1 rounded" style={{ background: COLORS.woodDark }} />
+                    <div className="w-1 h-4 mx-auto" style={{ background: COLORS.woodDark }} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
+        )}
 
-          <UpgradeBtn
-            name={UPGRADES.fingers.name}
-            desc={UPGRADES.fingers.desc}
-            level={state.upgrades.fingers}
-            max={UPGRADES.fingers.max}
-            cost={getCost('fingers', state.upgrades.fingers)}
-            canAfford={state.coffee >= getCost('fingers', state.upgrades.fingers)}
-            onClick={() => buy('fingers')}
-          />
-
-          {state.unlocks.autoBrewer && (
-            <UpgradeBtn
-              name={UPGRADES.autoBrewer.name}
-              desc={UPGRADES.autoBrewer.desc}
-              level={state.upgrades.autoBrewer}
-              max={UPGRADES.autoBrewer.max}
-              cost={getCost('autoBrewer', state.upgrades.autoBrewer)}
-              canAfford={state.coffee >= getCost('autoBrewer', state.upgrades.autoBrewer)}
-              onClick={() => buy('autoBrewer')}
-              isNew={state.upgrades.autoBrewer === 0}
+        {/* More plants on floor */}
+        {state.upgrades.plants > 3 && (
+          <div className="absolute bottom-28 left-4">
+            <div className="w-6 h-8 rounded-b-lg" style={{ background: '#d4a574' }} />
+            <div
+              className="absolute -top-6 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full"
+              style={{ background: COLORS.plant }}
             />
-          )}
+          </div>
+        )}
+      </div>
 
-          {state.unlocks.espresso && (
-            <UpgradeBtn
-              name={UPGRADES.espresso.name}
-              desc={UPGRADES.espresso.desc}
-              level={state.upgrades.espresso}
-              max={UPGRADES.espresso.max}
-              cost={getCost('espresso', state.upgrades.espresso)}
-              canAfford={state.coffee >= getCost('espresso', state.upgrades.espresso)}
-              onClick={() => buy('espresso')}
-              isNew={state.upgrades.espresso === 0}
-            />
-          )}
+      {/* ============================================ */}
+      {/* UPGRADE SHOP */}
+      {/* ============================================ */}
+      <div className="p-4 space-y-2">
+        <h2 className="font-bold text-lg" style={{ color: COLORS.brown }}>Upgrades</h2>
 
-          {state.unlocks.barista && (
-            <UpgradeBtn
-              name={UPGRADES.barista.name}
-              desc={UPGRADES.barista.desc}
-              level={state.upgrades.barista}
-              max={UPGRADES.barista.max}
-              cost={getCost('barista', state.upgrades.barista)}
-              canAfford={state.coffee >= getCost('barista', state.upgrades.barista)}
-              onClick={() => buy('barista')}
-              isNew={state.upgrades.barista === 0}
-            />
-          )}
+        {(Object.keys(UPGRADES) as Array<keyof typeof UPGRADES>).map(key => {
+          if (!state.unlocks.has(key)) return null;
+          const upgrade = UPGRADES[key];
+          const level = state.upgrades[key];
+          const cost = getCost(key, level);
+          const maxed = level >= upgrade.max;
+          const canAfford = state.coffee >= cost;
 
-          {state.unlocks.franchise && (
-            <UpgradeBtn
-              name={UPGRADES.franchise.name}
-              desc={UPGRADES.franchise.desc}
-              level={state.upgrades.franchise}
-              max={UPGRADES.franchise.max}
-              cost={getCost('franchise', state.upgrades.franchise)}
-              canAfford={state.coffee >= getCost('franchise', state.upgrades.franchise)}
-              onClick={() => buy('franchise')}
-              isNew={state.upgrades.franchise === 0}
-            />
-          )}
-
-          {/* Prestige */}
-          {state.unlocks.prestige && (
+          return (
             <button
-              onClick={prestige}
-              className="w-full mt-4 p-3 rounded-xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
+              key={key}
+              onClick={() => buy(key)}
+              disabled={maxed || !canAfford}
+              className={`w-full p-3 rounded-xl flex items-center justify-between transition-all ${
+                maxed ? '' : canAfford ? 'hover:scale-[1.02] active:scale-[0.98]' : 'opacity-50'
+              }`}
               style={{
-                background: `linear-gradient(135deg, ${COLORS.brown}, ${COLORS.darkBrown})`,
-                color: COLORS.cream,
-                border: `3px solid ${COLORS.darkBrown}`,
+                background: maxed ? COLORS.bgDark : COLORS.cream,
+                border: `3px solid ${maxed ? COLORS.accent : canAfford ? COLORS.brown : COLORS.bgDark}`,
               }}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div>New Location</div>
-                  <div className="text-xs opacity-80">Reset for +0.5x permanent</div>
-                </div>
-                <div className="text-lg">PRESTIGE</div>
+              <div className="text-left">
+                <div className="font-bold" style={{ color: COLORS.brown }}>{upgrade.name}</div>
+                <div className="text-xs" style={{ color: COLORS.accent }}>{upgrade.desc}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs" style={{ color: COLORS.accent }}>{level}/{upgrade.max}</div>
+                {maxed ? (
+                  <div className="font-bold" style={{ color: COLORS.plant }}>MAX</div>
+                ) : (
+                  <div className="font-bold" style={{ color: canAfford ? COLORS.brown : COLORS.bgDark }}>
+                    {fmt(cost)}
+                  </div>
+                )}
               </div>
             </button>
-          )}
-
-          {/* Progress hint */}
-          {!state.unlocks.autoBrewer && state.totalCoffee < 25 && (
-            <div className="text-center text-sm mt-6" style={{ color: COLORS.medBrown }}>
-              {25 - Math.floor(state.totalCoffee)} more to unlock something new...
-            </div>
-          )}
-        </div>
+          );
+        })}
       </div>
 
       <style jsx global>{`
@@ -536,57 +476,11 @@ export default function CoffeeShopGame({ fid }: { fid: number }) {
           0% { opacity: 1; transform: translateY(0) scale(1); }
           100% { opacity: 0; transform: translateY(-50px) scale(1.3); }
         }
-        @keyframes float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-8px); }
-        }
-        @keyframes steam {
-          0%, 100% { opacity: 0.4; transform: translateY(0); }
-          50% { opacity: 0.8; transform: translateY(-4px); }
+        @keyframes steamRise {
+          0% { opacity: 0.6; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-30px) scale(0.5); }
         }
       `}</style>
     </div>
-  );
-}
-
-function UpgradeBtn({ name, desc, level, max, cost, canAfford, onClick, isNew = false }: {
-  name: string; desc: string; level: number; max: number; cost: number; canAfford: boolean; onClick: () => void; isNew?: boolean;
-}) {
-  const maxed = level >= max;
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={maxed || !canAfford}
-      className={`w-full p-3 rounded-xl flex items-center justify-between transition-all ${
-        maxed ? '' : canAfford ? 'hover:scale-[1.02] active:scale-[0.98]' : 'opacity-50'
-      }`}
-      style={{
-        background: maxed ? COLORS.tan : COLORS.cream,
-        border: `3px solid ${maxed ? COLORS.brown : canAfford ? COLORS.brown : COLORS.lightBrown}`,
-      }}
-    >
-      <div className="text-left">
-        <div className="font-bold flex items-center gap-2" style={{ color: COLORS.darkBrown }}>
-          {name}
-          {isNew && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ background: COLORS.brown, color: COLORS.cream }}>
-              NEW
-            </span>
-          )}
-        </div>
-        <div className="text-xs" style={{ color: COLORS.medBrown }}>{desc}</div>
-      </div>
-      <div className="text-right">
-        <div className="text-xs" style={{ color: COLORS.medBrown }}>{level}/{max}</div>
-        {maxed ? (
-          <div className="font-bold" style={{ color: COLORS.brown }}>MAX</div>
-        ) : (
-          <div className="font-bold" style={{ color: canAfford ? COLORS.darkBrown : COLORS.lightBrown }}>
-            {fmt(cost)}
-          </div>
-        )}
-      </div>
-    </button>
   );
 }
