@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
     // Mark milestone as claimed
     const state = await updateGameState(fid, (state) => ({
       ...state,
-      milestones: [...state.milestones, milestone],
+      milestonesClaimed: [...state.milestonesClaimed, milestone],
+      nounTokensEarned: state.nounTokensEarned + reward,
     }));
 
     // TODO: In production, this would trigger an actual token transfer
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       state,
       reward,
-      message: `Claimed ${reward} $NOUN for: ${MILESTONES[milestone as keyof typeof MILESTONES].description}`,
+      message: `Claimed ${reward} $NOUN for: ${MILESTONES[milestone as keyof typeof MILESTONES].name}`,
       // In production: txHash would be included here
     });
   } catch (error) {

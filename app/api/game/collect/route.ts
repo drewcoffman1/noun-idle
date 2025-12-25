@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateGameState } from '@/lib/redis';
-import { calculateIdleEarnings } from '@/lib/game';
+import { calculateOfflineEarnings } from '@/lib/game';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,11 +12,11 @@ export async function POST(request: NextRequest) {
     }
 
     const state = await updateGameState(fid, (currentState) => {
-      const earnings = calculateIdleEarnings(currentState);
+      const earnings = calculateOfflineEarnings(currentState);
       return {
         ...currentState,
-        coins: currentState.coins + earnings.coins,
-        totalCoffees: currentState.totalCoffees + earnings.coffees,
+        beans: currentState.beans + earnings,
+        totalBeans: currentState.totalBeans + earnings,
         lastCollected: Date.now(),
       };
     });

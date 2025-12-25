@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGameState, saveGameState } from '@/lib/redis';
-import { calculateIdleEarnings, createInitialState } from '@/lib/game';
+import { calculateOfflineEarnings, createInitialState } from '@/lib/game';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -18,12 +18,12 @@ export async function GET(request: NextRequest) {
   try {
     let state = await getGameState(fid);
 
-    // Calculate idle earnings since last visit
-    const earnings = calculateIdleEarnings(state);
+    // Calculate offline earnings since last visit
+    const earnings = calculateOfflineEarnings(state);
     state = {
       ...state,
-      coins: state.coins + earnings.coins,
-      totalCoffees: state.totalCoffees + earnings.coffees,
+      beans: state.beans + earnings,
+      totalBeans: state.totalBeans + earnings,
       lastCollected: Date.now(),
     };
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       state,
-      idleEarnings: earnings,
+      offlineEarnings: earnings,
     });
   } catch (error) {
     console.error('Error fetching game state:', error);

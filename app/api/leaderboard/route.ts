@@ -9,7 +9,7 @@ const redis = new Redis({
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const type = searchParams.get('type') || 'coffees'; // coffees, prestige, quests
+  const type = searchParams.get('type') || 'beans'; // beans, prestige, taps
 
   try {
     // Get all game states and rank them
@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
     let leaderboard: Array<{ fid: number; value: number; name: string }> = [];
 
     switch (type) {
-      case 'coffees':
+      case 'beans':
         leaderboard = validStates
           .map((state) => ({
             fid: state.fid,
-            value: state.totalCoffees || 0,
+            value: state.totalBeans || 0,
             name: `User ${state.fid}`, // In production, fetch from Farcaster
           }))
           .sort((a, b) => b.value - a.value);
@@ -49,11 +49,11 @@ export async function GET(request: NextRequest) {
           .sort((a, b) => b.value - a.value);
         break;
 
-      case 'quests':
+      case 'taps':
         leaderboard = validStates
           .map((state) => ({
             fid: state.fid,
-            value: state.questStreak || 0,
+            value: state.totalTaps || 0,
             name: `User ${state.fid}`,
           }))
           .sort((a, b) => b.value - a.value);

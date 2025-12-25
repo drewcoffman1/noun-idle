@@ -3,70 +3,72 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   GameState,
-  UPGRADE_COSTS,
-  PREMIUM_UPGRADE_COSTS,
+  UPGRADES,
   MILESTONES,
-  ACHIEVEMENTS,
-  calculateProductionRate,
-  calculateTapPower,
-  getUpgradeCost,
-  getPremiumUpgradeCost,
-  getUnclaimedMilestones,
-  checkAchievements,
-  updateQuestProgress,
-  shouldResetQuests,
-  generateDailyQuests,
-  calculatePrestigeCost,
-  canPrestige,
   createInitialState,
+  calculateClickPower,
+  calculateProductionRate,
+  calculateOfflineEarnings,
+  getUpgradeCost,
+  canAfford,
+  rollCritical,
+  shouldSpawnGolden,
+  getPrestigeCost,
+  canPrestige,
+  getUnclaimedMilestones,
+  checkNewAchievements,
+  formatNumber,
+  UpgradeKey,
 } from '@/lib/game';
-
-const fmt = (n: number): string => {
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-  return Math.floor(n).toLocaleString();
-};
 
 interface Props {
   fid: number;
 }
 
-type Tab = 'game' | 'upgrades' | 'premium' | 'quests' | 'achievements' | 'prestige';
-
 export default function NounCoffeeTycoon({ fid }: Props) {
   const [state, setState] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>('game');
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; value: number }>>([]);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; value: string; isCrit: boolean }>>([]);
+  const [achievements, setAchievements] = useState<string[]>([]);
   const [showPrestigeModal, setShowPrestigeModal] = useState(false);
   const particleId = useRef(0);
+  const lastAutoClick = useRef(Date.now());
 
-  // Load game state
+  // Load state
   useEffect(() => {
-    async function loadState() {
+    async function load() {
       try {
         const res = await fetch(`/api/game/state?fid=${fid}`);
         if (res.ok) {
           const data = await res.json();
-          setState(data.state);
-          if (data.idleEarnings?.coins > 0) {
-            showNotification(`Earned ${fmt(data.idleEarnings.coins)} while away`);
+          const gameState = data.state as GameState;
+
+          // Calculate offline earnings
+          const offline = calculateOfflineEarnings(gameState);
+          if (offline > 0) {
+            gameState.beans += offline;
+            gameState.totalBeans += offline;
+
+            // Activate return bonus
+            gameState.returnBonusActive = true;
+            gameState.returnBonusExpires = Date.now() + (2 * 60 * 1000); // 2 minutes
+
+            setAchievements([`Welcome back! Earned ${formatNumber(offline)} beans offline! 2x BONUS for 2 minutes!`]);
           }
+
+          gameState.lastCollected = Date.now();
+          setState(gameState);
         } else {
-          // API failed, create initial state locally
           setState(createInitialState(fid));
         }
       } catch (error) {
-        console.error('Failed to load state:', error);
-        // Fallback to local state
+        console.error('Load error:', error);
         setState(createInitialState(fid));
       } finally {
         setLoading(false);
       }
     }
-    loadState();
+    load();
   }, [fid]);
 
   // Auto-save
@@ -80,610 +82,467 @@ export default function NounCoffeeTycoon({ fid }: Props) {
           body: JSON.stringify({ fid, state }),
         });
       } catch (error) {
-        console.error('Failed to save:', error);
+        console.error('Save error:', error);
       }
-    }, 10000);
+    }, 5000); // Save every 5 seconds
     return () => clearInterval(interval);
   }, [fid, state]);
 
-  // Quest reset check
-  useEffect(() => {
-    if (!state || !shouldResetQuests(state)) return;
-    setState(prev => {
-      if (!prev) return prev;
-      const allCompleted = prev.dailyQuests.every(q => q.claimed);
-      return {
-        ...prev,
-        dailyQuests: generateDailyQuests(),
-        lastQuestReset: Date.now(),
-        questStreak: allCompleted ? prev.questStreak + 1 : 0,
-      };
-    });
-    showNotification('New daily quests available');
-  }, [state]);
-
-  // Auto production
+  // Auto-production
   useEffect(() => {
     if (!state) return;
+
     const interval = setInterval(() => {
       setState(prev => {
         if (!prev) return prev;
+
         const perSec = calculateProductionRate(prev);
         if (perSec === 0) return prev;
 
+        const now = Date.now();
+        const elapsed = (now - lastAutoClick.current) / 1000;
+        lastAutoClick.current = now;
+
+        const earned = Math.floor(perSec * elapsed);
+
         const newState = {
           ...prev,
-          coins: prev.coins + perSec,
-          totalCoffees: prev.totalCoffees + perSec,
-          lastCollected: Date.now(),
+          beans: prev.beans + earned,
+          totalBeans: prev.totalBeans + earned,
+          lastCollected: now,
         };
-        updateQuestProgress(newState, { type: 'idle', amount: perSec });
-        const achievements = checkAchievements(newState);
-        if (achievements.length > 0) {
-          showNotification(`Achievement: ${achievements[0].name}`);
+
+        // Check achievements
+        const newAchievements = checkNewAchievements(newState);
+        if (newAchievements.length > 0) {
+          setAchievements(prev => [...prev, ...newAchievements]);
         }
+
         return newState;
       });
-    }, 1000);
+    }, 100); // Update every 100ms for smooth animation
+
     return () => clearInterval(interval);
   }, [state]);
 
-  const showNotification = (message: string) => {
-    setNotification(message);
-    setTimeout(() => setNotification(null), 3000);
-  };
+  // Golden bean spawner
+  useEffect(() => {
+    if (!state || state.goldenBeanSpawned) return;
 
+    const interval = setInterval(() => {
+      setState(prev => {
+        if (!prev || prev.goldenBeanSpawned) return prev;
+
+        if (shouldSpawnGolden(prev)) {
+          return {
+            ...prev,
+            goldenBeanSpawned: true,
+            goldenBeanExpires: Date.now() + 10000, // 10 seconds to click
+          };
+        }
+
+        return prev;
+      });
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, [state]);
+
+  // Golden bean expiry
+  useEffect(() => {
+    if (!state?.goldenBeanSpawned) return;
+
+    const timeout = setTimeout(() => {
+      setState(prev => {
+        if (!prev) return prev;
+        return { ...prev, goldenBeanSpawned: false };
+      });
+    }, state.goldenBeanExpires - Date.now());
+
+    return () => clearTimeout(timeout);
+  }, [state?.goldenBeanSpawned, state?.goldenBeanExpires]);
+
+  // Handle tap
   const handleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!state) return;
-    const earned = calculateTapPower(state);
+
+    const isCrit = rollCritical(state);
+    const basePower = calculateClickPower(state);
+    const earnedPerClick = isCrit ? basePower * 5 : basePower;
+
     setState(prev => {
       if (!prev) return prev;
+
       const newState = {
         ...prev,
-        coins: prev.coins + earned,
-        totalCoffees: prev.totalCoffees + earned,
+        beans: prev.beans + earnedPerClick,
+        totalBeans: prev.totalBeans + earnedPerClick,
         totalTaps: prev.totalTaps + 1,
+        criticalHitActive: isCrit,
       };
-      updateQuestProgress(newState, { type: 'tap', amount: earned });
+
+      // Check achievements
+      const newAchievements = checkNewAchievements(newState);
+      if (newAchievements.length > 0) {
+        setAchievements(prevAch => [...prevAch, ...newAchievements]);
+      }
+
       return newState;
     });
 
+    // Particle effect
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setParticles(prev => [...prev, {
       id: particleId.current++,
-      x: rect.left + rect.width / 2,
-      y: rect.top,
-      value: earned,
+      x: rect.left + rect.width / 2 + (Math.random() - 0.5) * 40,
+      y: rect.top + 20 + (Math.random() - 0.5) * 20,
+      value: isCrit ? `CRIT! +${formatNumber(earnedPerClick)}` : `+${formatNumber(earnedPerClick)}`,
+      isCrit,
     }]);
+
+    // Clear crit state after animation
+    setTimeout(() => {
+      setState(prev => prev ? { ...prev, criticalHitActive: false } : prev);
+    }, 300);
   }, [state]);
 
-  const buyUpgrade = useCallback(async (upgradeKey: keyof typeof UPGRADE_COSTS) => {
+  // Handle golden bean tap
+  const handleGoldenTap = useCallback(() => {
     if (!state) return;
-    const cost = getUpgradeCost(upgradeKey, state.upgrades[upgradeKey]);
-    if (!cost || state.coins < cost) return;
-    setState(prev => {
-      if (!prev) return prev;
-      const newState = {
-        ...prev,
-        coins: prev.coins - cost,
-        upgrades: { ...prev.upgrades, [upgradeKey]: prev.upgrades[upgradeKey] + 1 },
-      };
-      updateQuestProgress(newState, { type: 'upgrade' });
-      return newState;
-    });
-  }, [state]);
 
-  const buyPremiumUpgrade = useCallback(async (upgradeKey: keyof typeof PREMIUM_UPGRADE_COSTS) => {
-    if (!state) return;
-    const cost = getPremiumUpgradeCost(upgradeKey, state.upgrades[upgradeKey]);
-    if (!cost) return;
+    const bonus = Math.floor(state.beans * 0.1 + 100); // 10% of current beans + 100
+
     setState(prev => {
       if (!prev) return prev;
       return {
         ...prev,
-        upgrades: { ...prev.upgrades, [upgradeKey]: prev.upgrades[upgradeKey] + 1 },
-        nounTokensSpent: prev.nounTokensSpent + cost,
+        beans: prev.beans + bonus,
+        totalBeans: prev.totalBeans + bonus,
+        goldenBeans: prev.goldenBeans + 1,
+        goldenBeanSpawned: false,
       };
     });
-    showNotification(`Purchased ${upgradeKey}`);
+
+    setAchievements(prev => [...prev, `Golden Bean! +${formatNumber(bonus)}`]);
   }, [state]);
 
-  const claimQuest = useCallback((questId: string) => {
-    if (!state) return;
+  // Buy upgrade
+  const buyUpgrade = useCallback((key: UpgradeKey) => {
+    if (!state || !canAfford(state, key)) return;
+
+    const cost = getUpgradeCost(key, state.upgrades[key]);
+
     setState(prev => {
       if (!prev) return prev;
-      const quest = prev.dailyQuests.find(q => q.id === questId);
-      if (!quest || !quest.completed || quest.claimed) return prev;
-      quest.claimed = true;
-      return { ...prev, coins: prev.coins + quest.reward };
+      return {
+        ...prev,
+        beans: prev.beans - cost,
+        upgrades: { ...prev.upgrades, [key]: prev.upgrades[key] + 1 },
+      };
     });
-    showNotification('Quest reward claimed');
   }, [state]);
 
-  const claimMilestone = useCallback(async (milestoneKey: string) => {
+  // Prestige
+  const handlePrestige = useCallback(() => {
+    if (!state || !canPrestige(state)) return;
+
+    setState(prev => {
+      if (!prev) return prev;
+
+      // Calculate lifetime bonus (10% of all-time beans)
+      const newLifetimeBonus = prev.totalBeans * 0.1;
+
+      return {
+        ...prev,
+        beans: 0,
+        totalBeans: 0,
+        totalTaps: 0,
+        upgrades: {
+          clickPower: 0,
+          autoClickers: 0,
+          clickMultiplier: 0,
+          productionMultiplier: 0,
+          critChance: prev.upgrades.critChance, // Keep these
+          goldenChance: prev.upgrades.goldenChance,
+          offlineBonus: prev.upgrades.offlineBonus,
+        },
+        prestigeLevel: prev.prestigeLevel + 1,
+        prestigeStars: prev.prestigeStars + 1,
+        lifetimeBonus: prev.lifetimeBonus + newLifetimeBonus,
+      };
+    });
+
+    setShowPrestigeModal(false);
+    setAchievements(prev => [...prev, `PRESTIGED! Level ${state.prestigeLevel + 1}! Permanent bonus increased!`]);
+  }, [state]);
+
+  // Claim milestone
+  const claimMilestone = useCallback(async (key: string) => {
     if (!state) return;
+
     try {
       const res = await fetch('/api/token/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fid, milestone: milestoneKey }),
+        body: JSON.stringify({ fid, milestone: key }),
       });
+
       if (res.ok) {
         const data = await res.json();
-        setState(prev => prev ? data.state : prev);
-        showNotification(data.message);
+        setState(data.state);
+        setAchievements(prev => [...prev, data.message]);
       }
     } catch (error) {
-      console.error('Failed to claim:', error);
+      console.error('Claim error:', error);
     }
   }, [fid, state]);
-
-  const handlePrestige = useCallback(() => {
-    if (!state || !canPrestige(state)) return;
-    setState(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        coins: 0,
-        totalCoffees: 0,
-        upgrades: {
-          tapPower: 0,
-          coffeeMachine: 0,
-          barista: 0,
-          pastryCase: 0,
-          cozySeating: 0,
-          bookshelf: 0,
-          plants: 0,
-          lighting: 0,
-          espressoBar: prev.upgrades.espressoBar,
-          roastery: prev.upgrades.roastery,
-          franchise: prev.upgrades.franchise,
-        },
-        prestigeLevel: prev.prestigeLevel + 1,
-        prestigePoints: prev.prestigePoints + 1,
-      };
-    });
-    setShowPrestigeModal(false);
-    showNotification('Prestiged! +10% production boost');
-  }, [state]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-gray-200 border-t-black rounded-full animate-spin mx-auto mb-4" />
-          <div className="text-sm text-gray-600">Loading...</div>
-        </div>
+        <div className="w-12 h-12 border-4 border-gray-200 border-t-black rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (!state) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-white">
-        <div className="text-center text-gray-600">
-          <div className="text-xl mb-2">Error loading game</div>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!state) return null;
 
+  const clickPower = calculateClickPower(state);
   const perSec = calculateProductionRate(state);
-  const perTap = calculateTapPower(state);
   const unclaimedMilestones = getUnclaimedMilestones(state);
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Particles */}
+    <div className="min-h-screen bg-white pb-24">
+      {/* Floating particles */}
       {particles.map(p => (
         <div
           key={p.id}
-          className="fixed pointer-events-none font-bold text-xl z-50"
+          className={`fixed pointer-events-none font-black z-50 ${p.isCrit ? 'text-3xl text-red-600' : 'text-xl text-black'}`}
           style={{
             left: p.x,
             top: p.y,
-            color: '#000',
             animation: 'floatUp 1s ease-out forwards',
           }}
           onAnimationEnd={() => setParticles(prev => prev.filter(x => x.id !== p.id))}
         >
-          +{fmt(p.value)}
+          {p.value}
         </div>
       ))}
 
-      {/* Notification */}
-      {notification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg font-medium shadow-lg bg-black text-white animate-slideDown">
-          {notification}
+      {/* Achievement toasts */}
+      {achievements.slice(-3).map((ach, i) => (
+        <div
+          key={i}
+          className="fixed right-4 bg-black text-white px-4 py-2 rounded-lg shadow-lg text-sm font-bold animate-slideIn z-50"
+          style={{ top: `${80 + i * 60}px` }}
+        >
+          🎉 {ach}
         </div>
-      )}
+      ))}
 
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white sticky top-0 z-40">
+      <header className="sticky top-0 bg-white border-b border-gray-200 z-40">
         <div className="max-w-md mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-xl font-bold text-black flex items-center gap-2">
-                <svg width="24" height="12" viewBox="0 0 24 12" fill="none">
-                  <rect width="9" height="9" fill="#000" />
-                  <rect x="15" width="9" height="9" fill="#000" />
-                  <rect x="9" y="3" width="6" height="3" fill="#000" />
+              <div className="text-sm font-bold flex items-center gap-2">
+                <svg width="20" height="10" viewBox="0 0 20 10">
+                  <rect width="8" height="8" fill="#000" />
+                  <rect x="12" width="8" height="8" fill="#000" />
+                  <rect x="8" y="3" width="4" height="2" fill="#000" />
                 </svg>
                 NOUN COFFEE
-              </h1>
-              {state.prestigeLevel > 0 && (
-                <div className="text-xs text-gray-500 mt-1">Prestige {state.prestigeLevel}</div>
-              )}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {state.prestigeLevel > 0 && `⭐ Prestige ${state.prestigeLevel} • `}
+                {formatNumber(perSec)}/sec
+                {state.returnBonusActive && Date.now() < state.returnBonusExpires && ' • 2X BONUS!'}
+              </div>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-black">{fmt(state.coins)}</div>
-              {perSec > 0 && (
-                <div className="text-sm text-gray-500">+{fmt(perSec)}/s</div>
+              <div className="text-3xl font-black">{formatNumber(state.beans)}</div>
+              {state.goldenBeans > 0 && (
+                <div className="text-xs text-yellow-600">🌟 {state.goldenBeans} golden</div>
               )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Game View */}
-      {activeTab === 'game' && (
-        <div className="max-w-md mx-auto px-6 py-8">
-          {/* Tap Area */}
-          <div className="text-center mb-8">
+      {/* Main tap area */}
+      <div className="max-w-md mx-auto px-6 py-8">
+        <div className="relative">
+          {/* Golden bean spawn */}
+          {state.goldenBeanSpawned && (
             <button
-              onClick={handleTap}
-              className="mx-auto transition-transform active:scale-95 hover:scale-105"
+              onClick={handleGoldenTap}
+              className="absolute -top-20 left-1/2 -translate-x-1/2 text-6xl animate-bounce z-10"
+              style={{ animation: 'bounce 0.5s infinite' }}
             >
-              {/* Minimal Coffee Cup */}
-              <div className="relative w-32 h-32 mx-auto mb-4">
-                <svg viewBox="0 0 100 100" className="w-full h-full">
-                  {/* Cup */}
-                  <rect x="20" y="30" width="50" height="60" rx="5" fill="white" stroke="black" strokeWidth="2"/>
-                  {/* Coffee */}
-                  <rect x="22" y="40" width="46" height="48" rx="3" fill="#1a1a1a"/>
-                  {/* Nouns Glasses */}
-                  <g transform="translate(30, 55)">
-                    <rect width="15" height="15" fill="white"/>
-                    <rect x="25" width="15" height="15" fill="white"/>
-                    <rect x="15" y="5" width="10" height="5" fill="white"/>
-                  </g>
-                  {/* Handle */}
-                  <path d="M 70 45 Q 85 45 85 60 Q 85 75 70 75" fill="none" stroke="black" strokeWidth="2"/>
-                  {/* Saucer */}
-                  <ellipse cx="45" cy="90" rx="35" ry="5" fill="white" stroke="black" strokeWidth="2"/>
-                </svg>
-              </div>
-              <div className="px-6 py-2 bg-black text-white rounded-full font-bold inline-block">
-                Tap +{fmt(perTap)}
-              </div>
+              🌟
             </button>
-          </div>
+          )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 border border-gray-200 rounded-lg">
-              <div className="text-xs text-gray-500 mb-1">Total Brewed</div>
-              <div className="text-lg font-bold">{fmt(state.totalCoffees)}</div>
-            </div>
-            <div className="p-4 border border-gray-200 rounded-lg">
-              <div className="text-xs text-gray-500 mb-1">Per Second</div>
-              <div className="text-lg font-bold">{fmt(perSec)}</div>
-            </div>
+          {/* Main tap button */}
+          <button
+            onClick={handleTap}
+            className={`w-64 h-64 mx-auto rounded-full flex items-center justify-center text-8xl transition-all active:scale-90 ${
+              state.criticalHitActive
+                ? 'scale-110 bg-red-100 shadow-2xl shadow-red-500'
+                : 'hover:scale-105 bg-black shadow-xl'
+            }`}
+            style={{
+              background: state.criticalHitActive
+                ? 'radial-gradient(circle, #fee2e2 0%, #fca5a5 100%)'
+                : '#000',
+            }}
+          >
+            <div className={state.criticalHitActive ? 'animate-pulse' : ''}>☕</div>
+          </button>
+
+          <div className="text-center mt-4">
+            <div className="text-2xl font-black">+{formatNumber(clickPower)}</div>
+            <div className="text-sm text-gray-500">per click</div>
+            {state.upgrades.critChance > 0 && (
+              <div className="text-xs text-red-600 mt-1">
+                {UPGRADES.critChance.effect(state.upgrades.critChance)}% crit chance (5x)
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Tab Navigation */}
-      <div className="border-t border-gray-200 bg-white sticky bottom-0">
-        <div className="max-w-md mx-auto flex">
-          {(['game', 'upgrades', 'premium', 'quests', 'achievements', 'prestige'] as Tab[]).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-3 text-xs font-medium relative ${
-                activeTab === tab
-                  ? 'text-black border-t-2 border-black'
-                  : 'text-gray-400'
-              }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              {tab === 'quests' && state.dailyQuests.some(q => q.completed && !q.claimed) && (
-                <span className="absolute top-1 right-2 w-2 h-2 bg-black rounded-full" />
-              )}
-              {tab === 'achievements' && unclaimedMilestones.length > 0 && (
-                <span className="absolute top-1 right-2 w-2 h-2 bg-black rounded-full" />
-              )}
-            </button>
-          ))}
-        </div>
+        {/* Auto-clickers indicator */}
+        {state.upgrades.autoClickers > 0 && (
+          <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {Array.from({ length: Math.min(state.upgrades.autoClickers, 5) }).map((_, i) => (
+                  <div key={i} className="text-2xl animate-bounce" style={{ animationDelay: `${i * 0.2}s` }}>
+                    👤
+                  </div>
+                ))}
+                {state.upgrades.autoClickers > 5 && (
+                  <div className="text-sm font-bold">+{state.upgrades.autoClickers - 5} more</div>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-bold">{state.upgrades.autoClickers} Baristas</div>
+                <div className="text-xs text-gray-500">Working for you</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tab Content */}
-      <div className="max-w-md mx-auto px-6 py-6 pb-24">
-        {activeTab === 'upgrades' && (
-          <>
-            <h2 className="text-lg font-bold mb-4">Upgrades</h2>
-            <div className="space-y-2">
-              {(Object.keys(UPGRADE_COSTS) as Array<keyof typeof UPGRADE_COSTS>).map(key => {
-                const upgradeData = UPGRADE_COSTS[key];
-                const level = state.upgrades[key];
-                const cost = getUpgradeCost(key, level);
-                const maxed = level >= upgradeData.max;
-                const canAfford = cost !== null && state.coins >= cost;
+      {/* Upgrades */}
+      <div className="max-w-md mx-auto px-6 pb-6">
+        <h2 className="font-bold mb-3">Upgrades</h2>
+        <div className="space-y-2">
+          {(Object.keys(UPGRADES) as UpgradeKey[]).map(key => {
+            const upgrade = UPGRADES[key];
+            const level = state.upgrades[key];
+            const cost = getUpgradeCost(key, level);
+            const affordable = canAfford(state, key);
+            const maxed = cost === Infinity;
 
-                return (
-                  <button
-                    key={key}
-                    onClick={() => buyUpgrade(key)}
-                    disabled={maxed || !canAfford}
-                    className={`w-full p-4 border rounded-lg text-left transition-all ${
-                      maxed
-                        ? 'border-gray-200 bg-gray-50'
-                        : canAfford
-                        ? 'border-black hover:bg-gray-50 active:bg-gray-100'
-                        : 'border-gray-200 opacity-40'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium capitalize">
-                          {key.replace(/([A-Z])/g, ' $1').trim()}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Level {level}/{upgradeData.max}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {maxed ? (
-                          <div className="text-sm font-medium">MAX</div>
-                        ) : (
-                          <div className="font-bold">
-                            {cost !== null ? fmt(cost) : 'MAX'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'premium' && (
-          <>
-            <h2 className="text-lg font-bold mb-2">Premium Upgrades</h2>
-            <p className="text-sm text-gray-600 mb-4">Requires $NOUN tokens</p>
-            <div className="space-y-2">
-              {(Object.keys(PREMIUM_UPGRADE_COSTS) as Array<keyof typeof PREMIUM_UPGRADE_COSTS>).map(key => {
-                const upgradeData = PREMIUM_UPGRADE_COSTS[key];
-                const level = state.upgrades[key];
-                const cost = getPremiumUpgradeCost(key, level);
-                const maxed = level >= upgradeData.max;
-
-                return (
-                  <button
-                    key={key}
-                    onClick={() => buyPremiumUpgrade(key)}
-                    disabled={maxed}
-                    className={`w-full p-4 border rounded-lg text-left ${
-                      maxed
-                        ? 'border-gray-200 bg-gray-50 opacity-50'
-                        : 'border-black hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium capitalize">
-                          {key.replace(/([A-Z])/g, ' $1').trim()}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Level {level}/{upgradeData.max}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {maxed ? (
-                          <div className="text-sm font-medium">MAX</div>
-                        ) : (
-                          <div className="font-bold text-sm">
-                            {cost !== null ? `${fmt(cost)} $NOUN` : 'MAX'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'quests' && (
-          <>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Daily Quests</h2>
-              {state.questStreak > 0 && (
-                <div className="text-sm font-medium">{state.questStreak} day streak</div>
-              )}
-            </div>
-            <div className="space-y-3">
-              {state.dailyQuests.map(quest => {
-                const progress = Math.min(quest.progress, quest.target);
-                const percentage = (progress / quest.target) * 100;
-
-                return (
-                  <div
-                    key={quest.id}
-                    className={`p-4 border rounded-lg ${
-                      quest.claimed
-                        ? 'border-gray-200 bg-gray-50'
-                        : quest.completed
-                        ? 'border-black'
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <div className="font-medium">{quest.description}</div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          Reward: {quest.reward} coins
-                        </div>
-                      </div>
-                      {quest.completed && !quest.claimed && (
-                        <button
-                          onClick={() => claimQuest(quest.id)}
-                          className="px-3 py-1 bg-black text-white text-sm rounded-lg hover:bg-gray-800"
-                        >
-                          Claim
-                        </button>
-                      )}
-                      {quest.claimed && <div className="text-xl">✓</div>}
-                    </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-black transition-all"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-gray-500 text-right mt-1">
-                      {progress} / {quest.target}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'achievements' && (
-          <>
-            <h2 className="text-lg font-bold mb-2">Milestones</h2>
-            <p className="text-sm text-gray-600 mb-4">Earn $NOUN tokens</p>
-            <div className="space-y-2">
-              {Object.entries(MILESTONES).map(([key, milestone]) => {
-                const claimed = state.milestones.includes(key);
-                const canClaim = unclaimedMilestones.includes(key);
-
-                return (
-                  <div
-                    key={key}
-                    className={`p-4 border rounded-lg ${
-                      claimed
-                        ? 'border-gray-200 bg-gray-50'
-                        : canClaim
-                        ? 'border-black'
-                        : 'border-gray-200 opacity-40'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <div className="font-medium">{milestone.description}</div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          {milestone.reward} $NOUN
-                        </div>
-                      </div>
-                      {claimed ? (
-                        <div className="text-xl">✓</div>
-                      ) : canClaim ? (
-                        <button
-                          onClick={() => claimMilestone(key)}
-                          className="px-3 py-1 bg-black text-white text-sm rounded-lg hover:bg-gray-800"
-                        >
-                          Claim
-                        </button>
-                      ) : (
-                        <div className="text-sm text-gray-400">Locked</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <h2 className="text-lg font-bold mt-8 mb-4">Achievements</h2>
-            <div className="space-y-2">
-              {state.achievements.map(achievement => (
-                <div
-                  key={achievement.id}
-                  className={`p-4 border rounded-lg ${
-                    achievement.unlocked ? 'border-black' : 'border-gray-200 opacity-40'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-medium">{achievement.name}</div>
-                      <div className="text-sm text-gray-500 mt-1">
-                        {achievement.description}
-                      </div>
-                      {achievement.unlocked && (
-                        <div className="text-xs text-black mt-2">Bonus Active</div>
-                      )}
-                    </div>
-                    {achievement.unlocked && <div className="text-xl">✓</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'prestige' && (
-          <>
-            <h2 className="text-lg font-bold mb-4">Prestige</h2>
-            <div className="p-6 border border-gray-200 rounded-lg">
-              <div className="text-center mb-6">
-                <div className="text-4xl font-bold mb-2">{state.prestigeLevel}</div>
-                <div className="text-sm text-gray-600">
-                  +{state.prestigeLevel * 10}% production bonus
-                </div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm text-gray-700">
-                Prestiging resets basic upgrades but keeps premium upgrades and grants +10% permanent production bonus
-              </div>
-              <div className="text-center mb-4">
-                <div className="text-xs text-gray-500 mb-1">Required:</div>
-                <div className="font-bold">{fmt(calculatePrestigeCost(state.prestigeLevel))} coffees</div>
-              </div>
+            return (
               <button
-                onClick={() => setShowPrestigeModal(true)}
-                disabled={!canPrestige(state)}
-                className={`w-full py-3 rounded-lg font-bold ${
-                  canPrestige(state)
-                    ? 'bg-black text-white hover:bg-gray-800'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                key={key}
+                onClick={() => buyUpgrade(key)}
+                disabled={!affordable || maxed}
+                className={`w-full p-3 border rounded-lg text-left transition-all ${
+                  maxed
+                    ? 'border-gray-200 bg-gray-50 opacity-50'
+                    : affordable
+                    ? 'border-black hover:bg-gray-50 active:scale-95'
+                    : 'border-gray-200 opacity-40'
                 }`}
               >
-                {canPrestige(state) ? 'Prestige Now' : 'Not Ready'}
+                <div className="flex justify-between items-center">
+                  <div className="flex-1">
+                    <div className="font-bold">{upgrade.name}</div>
+                    <div className="text-xs text-gray-500">{upgrade.desc}</div>
+                    <div className="text-xs text-gray-400 mt-1">Level {level}</div>
+                  </div>
+                  <div className="text-right ml-4">
+                    {maxed ? (
+                      <div className="text-sm font-bold">MAX</div>
+                    ) : (
+                      <>
+                        <div className="font-bold">{formatNumber(cost)}</div>
+                        {level > 0 && (
+                          <div className="text-xs text-gray-500">
+                            Next: {formatNumber(getUpgradeCost(key, level + 1))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </button>
+            );
+          })}
+        </div>
+
+        {/* Milestones */}
+        {unclaimedMilestones.length > 0 && (
+          <>
+            <h2 className="font-bold mb-3 mt-8">🎁 Claim Rewards</h2>
+            <div className="space-y-2">
+              {unclaimedMilestones.map(key => {
+                const milestone = MILESTONES[key as keyof typeof MILESTONES];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => claimMilestone(key)}
+                    className="w-full p-3 bg-yellow-50 border-2 border-yellow-500 rounded-lg hover:bg-yellow-100 active:scale-95"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="font-bold">{milestone.name}</div>
+                      <div className="font-bold text-yellow-600">+{milestone.reward} $NOUN</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
+
+        {/* Prestige */}
+        {canPrestige(state) && (
+          <button
+            onClick={() => setShowPrestigeModal(true)}
+            className="w-full mt-8 p-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-bold hover:scale-105 active:scale-95 transition-all"
+          >
+            ⭐ PRESTIGE AVAILABLE ⭐
+          </button>
+        )}
       </div>
 
-      {/* Prestige Modal */}
+      {/* Prestige modal */}
       {showPrestigeModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg max-w-sm w-full">
-            <h3 className="text-xl font-bold mb-4">Confirm Prestige</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Reset basic upgrades and coffee count for +10% permanent production bonus?
+            <h3 className="text-xl font-bold mb-4">⭐ Prestige</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Reset most upgrades but gain +10% permanent production bonus and keep 10% of lifetime beans as bonus!
             </p>
+            <div className="text-sm mb-4">
+              <div>Current lifetime bonus: {formatNumber(state.lifetimeBonus)}</div>
+              <div className="font-bold text-green-600">
+                After prestige: {formatNumber(state.lifetimeBonus + state.totalBeans * 0.1)}
+              </div>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowPrestigeModal(false)}
-                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="flex-1 py-2 border border-gray-300 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 onClick={handlePrestige}
-                className="flex-1 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
+                className="flex-1 py-2 bg-black text-white rounded-lg font-bold"
               >
                 Prestige
               </button>
@@ -695,14 +554,11 @@ export default function NounCoffeeTycoon({ fid }: Props) {
       <style jsx global>{`
         @keyframes floatUp {
           0% { opacity: 1; transform: translateY(0); }
-          100% { opacity: 0; transform: translateY(-60px); }
+          100% { opacity: 0; transform: translateY(-100px); }
         }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translate(-50%, -20px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateX(100px); }
+          to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
     </div>
