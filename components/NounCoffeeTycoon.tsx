@@ -550,17 +550,6 @@ export default function NounCoffeeTycoon({ fid }: Props) {
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        @keyframes floatUp {
-          0% { opacity: 1; transform: translateY(0); }
-          100% { opacity: 0; transform: translateY(-100px); }
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(100px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
     </div>
   );
 }
