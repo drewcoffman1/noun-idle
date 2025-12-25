@@ -26,6 +26,187 @@ interface Props {
   fid: number;
 }
 
+// Custom Coffee Cup SVG Component
+const CoffeeCup = ({ isCrit }: { isCrit: boolean }) => (
+  <svg width="180" height="200" viewBox="0 0 180 200" className="drop-shadow-2xl">
+    {/* Steam particles */}
+    <g className="steam-group">
+      {[0, 1, 2].map((i) => (
+        <path
+          key={i}
+          d="M 40 10 Q 45 5, 50 10 T 60 10"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="3"
+          strokeLinecap="round"
+          opacity="0.6"
+          style={{
+            animation: `steam 3s ease-in-out infinite`,
+            animationDelay: `${i * 0.5}s`,
+            transform: `translateX(${i * 25}px)`
+          }}
+        />
+      ))}
+    </g>
+
+    {/* Cup body with gradient */}
+    <defs>
+      <linearGradient id="cupGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style={{ stopColor: isCrit ? '#fef3c7' : '#fed7aa', stopOpacity: 1 }} />
+        <stop offset="50%" style={{ stopColor: isCrit ? '#fcd34d' : '#fdba74', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: isCrit ? '#fbbf24' : '#fb923c', stopOpacity: 1 }} />
+      </linearGradient>
+      <linearGradient id="coffeeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style={{ stopColor: '#78350f', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: '#451a03', stopOpacity: 1 }} />
+      </linearGradient>
+
+      {/* Glow filter for crit */}
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+
+    {/* Cup */}
+    <path
+      d="M 30 80 L 40 150 Q 45 165, 60 165 L 120 165 Q 135 165, 140 150 L 150 80 Z"
+      fill="url(#cupGradient)"
+      stroke={isCrit ? '#dc2626' : '#92400e'}
+      strokeWidth="3"
+      filter={isCrit ? 'url(#glow)' : 'none'}
+    />
+
+    {/* Coffee inside */}
+    <ellipse
+      cx="90"
+      cy="85"
+      rx="55"
+      ry="15"
+      fill="url(#coffeeGradient)"
+      opacity="0.9"
+    />
+
+    {/* Highlight on cup */}
+    <path
+      d="M 50 90 Q 60 85, 70 90"
+      fill="none"
+      stroke="#fff"
+      strokeWidth="4"
+      strokeLinecap="round"
+      opacity="0.4"
+    />
+
+    {/* Handle */}
+    <path
+      d="M 150 90 Q 170 90, 170 110 Q 170 130, 150 130"
+      fill="none"
+      stroke={isCrit ? '#dc2626' : '#92400e'}
+      strokeWidth="8"
+      strokeLinecap="round"
+    />
+
+    {/* Inner handle highlight */}
+    <path
+      d="M 152 95 Q 165 95, 165 110 Q 165 125, 152 125"
+      fill="none"
+      stroke="url(#cupGradient)"
+      strokeWidth="4"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+// Golden Bean SVG
+const GoldenBean = () => (
+  <svg width="80" height="100" viewBox="0 0 80 100" className="drop-shadow-2xl">
+    <defs>
+      <radialGradient id="goldGradient">
+        <stop offset="0%" style={{ stopColor: '#fef08a', stopOpacity: 1 }} />
+        <stop offset="50%" style={{ stopColor: '#fbbf24', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: '#f59e0b', stopOpacity: 1 }} />
+      </radialGradient>
+      <filter id="sparkle">
+        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+
+    {/* Bean shape */}
+    <path
+      d="M 40 20 Q 60 25, 60 40 Q 60 60, 40 80 Q 20 60, 20 40 Q 20 25, 40 20 Z"
+      fill="url(#goldGradient)"
+      filter="url(#sparkle)"
+      stroke="#92400e"
+      strokeWidth="2"
+    />
+
+    {/* Bean split line */}
+    <path
+      d="M 40 30 Q 35 45, 40 65"
+      fill="none"
+      stroke="#78350f"
+      strokeWidth="3"
+      strokeLinecap="round"
+    />
+
+    {/* Sparkles */}
+    {[
+      { x: 25, y: 25, delay: 0 },
+      { x: 55, y: 30, delay: 0.3 },
+      { x: 30, y: 60, delay: 0.6 }
+    ].map((spark, i) => (
+      <g key={i} style={{ animation: `twinkle 1.5s ease-in-out infinite`, animationDelay: `${spark.delay}s` }}>
+        <path
+          d={`M ${spark.x} ${spark.y} l 3 0 l -1.5 -3 Z`}
+          fill="#fff"
+          opacity="0.8"
+        />
+        <path
+          d={`M ${spark.x} ${spark.y} l 0 3 l 3 -1.5 Z`}
+          fill="#fff"
+          opacity="0.8"
+        />
+      </g>
+    ))}
+  </svg>
+);
+
+// Barista Icon SVG
+const BaristaIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 40 40">
+    <defs>
+      <linearGradient id="chefGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style={{ stopColor: '#fef3c7', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: '#fcd34d', stopOpacity: 1 }} />
+      </linearGradient>
+    </defs>
+
+    {/* Head */}
+    <circle cx="20" cy="18" r="10" fill="#fed7aa" stroke="#92400e" strokeWidth="2" />
+
+    {/* Chef hat */}
+    <ellipse cx="20" cy="10" rx="12" ry="6" fill="url(#chefGradient)" stroke="#92400e" strokeWidth="2" />
+    <rect x="12" y="10" width="16" height="4" fill="url(#chefGradient)" stroke="#92400e" strokeWidth="2" />
+
+    {/* Eyes */}
+    <circle cx="16" cy="17" r="1.5" fill="#000" />
+    <circle cx="24" cy="17" r="1.5" fill="#000" />
+
+    {/* Smile */}
+    <path d="M 15 21 Q 20 24, 25 21" fill="none" stroke="#000" strokeWidth="1.5" strokeLinecap="round" />
+
+    {/* Body/apron */}
+    <path d="M 10 28 L 10 35 L 30 35 L 30 28 Z" fill="#fff" stroke="#92400e" strokeWidth="2" />
+  </svg>
+);
+
 export default function NounCoffeeTycoon({ fid }: Props) {
   const [state, setState] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +231,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
             gameState.totalBeans += offline;
             gameState.returnBonusActive = true;
             gameState.returnBonusExpires = Date.now() + (2 * 60 * 1000);
-            setAchievements([`Welcome back! +${formatNumber(offline)} beans offline! 2x BONUS!`]);
+            setAchievements([`Welcome back! +${formatNumber(offline)} beans offline!`]);
           }
 
           gameState.lastCollected = Date.now();
@@ -293,8 +474,12 @@ export default function NounCoffeeTycoon({ fid }: Props) {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100">
         <div className="text-center">
-          <div className="text-6xl mb-4 animate-bounce">☕</div>
-          <div className="text-xl font-bold text-amber-900">Brewing...</div>
+          <div className="mb-8 flex justify-center">
+            <div className="animate-bounce">
+              <CoffeeCup isCrit={false} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-amber-900">Brewing your beans...</div>
         </div>
       </div>
     );
@@ -333,7 +518,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
           className="fixed right-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white px-6 py-3 rounded-2xl shadow-2xl text-sm font-bold animate-slideIn z-50"
           style={{ top: `${80 + i * 70}px` }}
         >
-          ✨ {ach}
+          {ach}
         </div>
       ))}
 
@@ -353,7 +538,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
               <div className="text-xs text-amber-700 mt-1 font-semibold">
                 {state.prestigeLevel > 0 && `⭐ Prestige ${state.prestigeLevel} • `}
                 {formatNumber(perSec)}/sec
-                {state.returnBonusActive && Date.now() < state.returnBonusExpires && ' • 🔥 2X BONUS!'}
+                {state.returnBonusActive && Date.now() < state.returnBonusExpires && ' • 🔥 2X!'}
               </div>
             </div>
             <div className="text-right">
@@ -370,65 +555,36 @@ export default function NounCoffeeTycoon({ fid }: Props) {
 
       {/* Main tap area */}
       <div className="max-w-md mx-auto px-6 py-12">
-        <div className="relative">
+        <div className="relative flex flex-col items-center">
           {/* Golden bean spawn */}
           {state.goldenBeanSpawned && (
             <button
               onClick={handleGoldenTap}
-              className="absolute -top-24 left-1/2 -translate-x-1/2 text-8xl z-10 drop-shadow-2xl"
+              className="absolute -top-32 z-10"
               style={{
                 animation: 'bounce 0.5s infinite, pulse 2s infinite',
-                filter: 'drop-shadow(0 0 20px rgba(234, 179, 8, 0.8))'
               }}
             >
-              ✨
+              <GoldenBean />
             </button>
           )}
 
-          {/* Coffee cup with steam */}
+          {/* Coffee cup button */}
           <button
             onClick={handleTap}
-            className={`relative w-72 h-72 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${
+            className={`relative p-8 rounded-full transition-all duration-300 ${
               state.criticalHitActive
                 ? 'scale-125'
                 : 'hover:scale-110 active:scale-95'
             }`}
             style={{
-              background: state.criticalHitActive
-                ? 'radial-gradient(circle at 30% 30%, #fef3c7, #fde68a, #fcd34d, #fbbf24)'
-                : 'radial-gradient(circle at 30% 30%, #fef3c7, #fed7aa, #fdba74, #fb923c)',
+              background: 'radial-gradient(circle at 50% 30%, rgba(254, 243, 199, 0.8), rgba(253, 186, 116, 0.4))',
               boxShadow: state.criticalHitActive
-                ? '0 25px 60px rgba(239, 68, 68, 0.4), 0 0 80px rgba(239, 68, 68, 0.3), inset 0 2px 20px rgba(255, 255, 255, 0.5)'
-                : '0 25px 60px rgba(251, 146, 60, 0.4), 0 10px 30px rgba(251, 146, 60, 0.2), inset 0 2px 20px rgba(255, 255, 255, 0.5)',
+                ? '0 25px 60px rgba(239, 68, 68, 0.5), 0 0 100px rgba(239, 68, 68, 0.3)'
+                : '0 20px 50px rgba(251, 146, 60, 0.3)',
             }}
           >
-            {/* Steam */}
-            <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex gap-3">
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  className="text-3xl opacity-60"
-                  style={{
-                    animation: `steam 3s ease-in-out infinite`,
-                    animationDelay: `${i * 0.5}s`
-                  }}
-                >
-                  ☁️
-                </div>
-              ))}
-            </div>
-
-            {/* Coffee cup */}
-            <div
-              className={`text-9xl ${state.criticalHitActive ? 'animate-pulse' : ''}`}
-              style={{
-                filter: state.criticalHitActive
-                  ? 'drop-shadow(0 0 30px rgba(239, 68, 68, 0.8))'
-                  : 'drop-shadow(0 10px 20px rgba(120, 53, 15, 0.3))'
-              }}
-            >
-              ☕
-            </div>
+            <CoffeeCup isCrit={state.criticalHitActive} />
           </button>
 
           <div className="text-center mt-8">
@@ -438,7 +594,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
             <div className="text-sm text-amber-700 font-semibold">per click</div>
             {state.upgrades.critChance > 0 && (
               <div className="text-xs text-red-600 font-bold mt-2 bg-red-50 inline-block px-3 py-1 rounded-full">
-                ⚡ {UPGRADES.critChance.effect(state.upgrades.critChance)}% crit (5x dmg)
+                ⚡ {UPGRADES.critChance.effect(state.upgrades.critChance)}% crit (5x)
               </div>
             )}
           </div>
@@ -452,13 +608,12 @@ export default function NounCoffeeTycoon({ fid }: Props) {
                 {Array.from({ length: Math.min(state.upgrades.autoClickers, 5) }).map((_, i) => (
                   <div
                     key={i}
-                    className="text-3xl"
                     style={{
                       animation: 'bounce 1s ease-in-out infinite',
                       animationDelay: `${i * 0.2}s`
                     }}
                   >
-                    👨‍🍳
+                    <BaristaIcon />
                   </div>
                 ))}
                 {state.upgrades.autoClickers > 5 && (
@@ -466,8 +621,8 @@ export default function NounCoffeeTycoon({ fid }: Props) {
                 )}
               </div>
               <div className="text-right">
-                <div className="text-lg font-black text-amber-900">{state.upgrades.autoClickers} Baristas</div>
-                <div className="text-xs text-amber-700 font-semibold">Brewing for you</div>
+                <div className="text-lg font-black text-amber-900">{state.upgrades.autoClickers}</div>
+                <div className="text-xs text-amber-700 font-semibold">Baristas</div>
               </div>
             </div>
           </div>
@@ -526,7 +681,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
         {/* Milestones */}
         {unclaimedMilestones.length > 0 && (
           <>
-            <h2 className="font-black text-xl mb-4 mt-10 text-amber-900">🎁 Claim Rewards</h2>
+            <h2 className="font-black text-xl mb-4 mt-10 text-amber-900">🎁 Rewards</h2>
             <div className="space-y-3">
               {unclaimedMilestones.map(key => {
                 const milestone = MILESTONES[key as keyof typeof MILESTONES];
@@ -559,7 +714,7 @@ export default function NounCoffeeTycoon({ fid }: Props) {
               boxShadow: '0 20px 40px rgba(147, 51, 234, 0.4), inset 0 2px 20px rgba(255, 255, 255, 0.3)'
             }}
           >
-            ⭐ PRESTIGE AVAILABLE ⭐
+            ⭐ PRESTIGE ⭐
           </button>
         )}
       </div>
@@ -570,12 +725,12 @@ export default function NounCoffeeTycoon({ fid }: Props) {
           <div className="bg-gradient-to-br from-white to-amber-50 p-8 rounded-3xl max-w-sm w-full shadow-2xl border-2 border-amber-200">
             <h3 className="text-2xl font-black mb-4 text-amber-900">⭐ Prestige</h3>
             <p className="text-sm text-amber-800 mb-6 font-semibold leading-relaxed">
-              Reset most upgrades but gain <span className="font-black text-orange-700">+10% permanent production bonus</span> and keep <span className="font-black text-orange-700">10% of lifetime beans</span> as permanent bonus!
+              Reset most upgrades but gain <span className="font-black text-orange-700">+10% permanent bonus</span> and keep <span className="font-black text-orange-700">10% of lifetime beans</span>!
             </p>
             <div className="text-sm mb-6 p-4 bg-amber-100 rounded-xl">
-              <div className="text-amber-800 font-semibold">Current lifetime bonus: {formatNumber(state.lifetimeBonus)}</div>
+              <div className="text-amber-800 font-semibold">Current: {formatNumber(state.lifetimeBonus)}</div>
               <div className="font-black text-orange-700 text-lg">
-                After prestige: {formatNumber(state.lifetimeBonus + state.totalBeans * 0.1)}
+                After: {formatNumber(state.lifetimeBonus + state.totalBeans * 0.1)}
               </div>
             </div>
             <div className="flex gap-3">
@@ -589,12 +744,25 @@ export default function NounCoffeeTycoon({ fid }: Props) {
                 onClick={handlePrestige}
                 className="flex-1 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-black shadow-lg hover:scale-105 active:scale-95"
               >
-                Prestige Now
+                Prestige
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes steam {
+          0% { opacity: 0.6; transform: translateY(0) scale(1); }
+          50% { opacity: 0.3; transform: translateY(-20px) scale(1.2); }
+          100% { opacity: 0; transform: translateY(-40px) scale(0.8); }
+        }
+
+        @keyframes twinkle {
+          0%, 100% { opacity: 0; transform: scale(0); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+      `}</style>
     </div>
   );
 }
