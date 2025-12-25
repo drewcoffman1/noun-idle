@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import CoffeeShopGame from '@/components/CoffeeShopGame';
-import { initializeMiniApp, sdk } from '@/lib/farcaster';
+import NounCoffeeTycoon from '@/components/NounCoffeeTycoon';
+import { initializeMiniApp } from '@/lib/farcaster';
 
 export default function Home() {
   const [fid, setFid] = useState<number | null>(null);
@@ -65,5 +65,5 @@ export default function Home() {
     );
   }
 
-  return <CoffeeShopGame fid={fid} />;
+  return <NounCoffeeTycoon fid={fid} />;
 }

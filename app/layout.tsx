@@ -1,18 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Noun Coffee Idle",
-  description: "Brew coffee, earn $NOUN tokens",
+  title: "Noun Coffee Tycoon",
+  description: "Build your coffee empire, complete quests, earn $NOUN tokens",
   openGraph: {
-    title: "Noun Coffee Idle",
-    description: "Brew coffee, earn $NOUN tokens",
+    title: "Noun Coffee Tycoon",
+    description: "Build your coffee empire, complete quests, earn $NOUN tokens",
     images: ["/og.png"],
   },
 };
@@ -32,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistMono.variable} font-mono antialiased`}>
+      <body className="font-sans antialiased">
         {children}
       </body>
     </html>

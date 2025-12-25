@@ -42,19 +42,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fid } = body;
+    const { fid, state: providedState } = body;
 
     if (!fid) {
       return NextResponse.json({ error: 'Missing fid' }, { status: 400 });
     }
 
-    // Create new game state
-    const state = createInitialState(fid);
+    // If state is provided, save it (for auto-save from frontend)
+    // Otherwise, create a new initial state
+    const state = providedState || createInitialState(fid);
     await saveGameState(state);
 
     return NextResponse.json({ state });
   } catch (error) {
-    console.error('Error creating game state:', error);
+    console.error('Error saving game state:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
