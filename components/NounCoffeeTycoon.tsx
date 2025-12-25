@@ -6,6 +6,7 @@ import {
   UPGRADES,
   MILESTONES,
   createInitialState,
+  migrateGameState,
   calculateClickPower,
   calculateProductionRate,
   calculateOfflineEarnings,
@@ -41,7 +42,8 @@ export default function NounCoffeeTycoon({ fid }: Props) {
         const res = await fetch(`/api/game/state?fid=${fid}`);
         if (res.ok) {
           const data = await res.json();
-          const gameState = data.state as GameState;
+          // Migrate old state to new format (ensures all properties exist)
+          const gameState = migrateGameState(data.state);
 
           // Calculate offline earnings
           const offline = calculateOfflineEarnings(gameState);

@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { GameState, createInitialState } from './game';
+import { GameState, createInitialState, migrateGameState } from './game';
 
 // Initialize Redis client with Upstash credentials
 const redis = new Redis({
@@ -13,11 +13,12 @@ export async function getGameState(fid: number): Promise<GameState> {
   const key = `${GAME_STATE_PREFIX}${fid}`;
 
   try {
-    const state = await redis.get<GameState>(key);
+    const state = await redis.get<any>(key);
     if (!state) {
       return createInitialState(fid);
     }
-    return state;
+    // Migrate old states to ensure all properties exist
+    return migrateGameState(state);
   } catch (error) {
     console.error('Redis get error:', error);
     return createInitialState(fid);

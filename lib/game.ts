@@ -152,6 +152,24 @@ export function createInitialState(fid: number): GameState {
   };
 }
 
+// Migrate old game states to new format
+export function migrateGameState(state: any): GameState {
+  const initial = createInitialState(state.fid || 99999);
+
+  return {
+    ...initial,
+    ...state,
+    // Ensure arrays always exist
+    achievementsUnlocked: state.achievementsUnlocked || [],
+    milestonesClaimed: state.milestonesClaimed || [],
+    // Ensure upgrades object has all properties
+    upgrades: {
+      ...initial.upgrades,
+      ...state.upgrades,
+    },
+  };
+}
+
 // Calculate beans per click
 export function calculateClickPower(state: GameState): number {
   let power = 1; // Base
