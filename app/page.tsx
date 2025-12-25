@@ -10,26 +10,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function init() {
-      try {
-        // Check if we're in a Farcaster mini app context
-        const context = await initializeMiniApp();
-        if (context?.user?.fid) {
-          setFid(context.user.fid);
-        } else {
-          // Demo mode - use a test FID so people can try it
-          setFid(99999); // Demo user
-        }
-      } catch (err) {
-        console.error('Init error:', err);
-        // Demo mode fallback
-        setFid(99999); // Demo user
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    init();
+    // For now, always use demo mode
+    // TODO: Re-enable Farcaster SDK once we debug the client-side error
+    setFid(99999);
+    setIsLoading(false);
   }, []);
 
   if (isLoading) {

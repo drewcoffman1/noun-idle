@@ -1,28 +1,18 @@
 'use client';
 
-import sdk from '@farcaster/miniapp-sdk';
-
-export { sdk };
+// Temporarily disabled SDK to avoid client-side errors
+// Will re-enable once we debug the issue
+export const sdk: any = null;
 
 export async function initializeMiniApp() {
-  try {
-    // Get context from the mini app
-    const context = await sdk.context;
-
-    // Signal that we're ready to show content
-    sdk.actions.ready({});
-
-    return context;
-  } catch (error) {
-    console.error('Failed to initialize mini app:', error);
-    throw error;
-  }
+  // Return null for now - always use demo mode
+  return null;
 }
 
 export function getMiniAppContext() {
-  return sdk.context;
+  return null;
 }
 
 export function getEthProvider() {
-  return sdk.wallet.ethProvider;
+  return null;
 }
