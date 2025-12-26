@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
+/* ============================================
+   NOUN COFFEE EMPIRE - Global Styles
+   ============================================ */
+
 :root {
-  --background: #1c1917;
-  --foreground: #fef3c7;
+  --background: #1a1a2e;
+  --foreground: #ffffff;
+  --accent: #f4a261;
 }
 
 @theme inline {
@@ -12,14 +17,27 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Base body styles */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Fira Code', monospace;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Steam animation */
+/* Pixel-perfect rendering for pixel art */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+/* Steam effect */
 @keyframes steam {
   0% {
     opacity: 0.6;
@@ -27,11 +45,11 @@ body {
   }
   50% {
     opacity: 0.3;
-    transform: translateY(-10px) scaleX(1.2);
+    transform: translateY(-12px) scaleX(1.3);
   }
   100% {
     opacity: 0;
-    transform: translateY(-20px) scaleX(0.8);
+    transform: translateY(-24px) scaleX(0.7);
   }
 }
 
@@ -39,25 +57,29 @@ body {
   animation: steam 2s ease-in-out infinite;
 }
 
-/* Floating number animation */
+/* Floating numbers */
 @keyframes floatUp {
   0% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateX(-50%) translateY(-30px) scale(1.1);
   }
   100% {
     opacity: 0;
-    transform: translateX(-50%) translateY(-80px);
+    transform: translateX(-50%) translateY(-60px) scale(1.2);
   }
 }
 
-/* Pulse animation for buttons */
+/* Pulse glow for buttons */
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 5px rgba(217, 119, 6, 0.5);
+    box-shadow: 0 0 5px rgba(244, 162, 97, 0.5);
   }
   50% {
-    box-shadow: 0 0 20px rgba(217, 119, 6, 0.8);
+    box-shadow: 0 0 20px rgba(244, 162, 97, 0.8), 0 0 30px rgba(244, 162, 97, 0.4);
   }
 }
 
@@ -65,26 +87,211 @@ body {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Shake animation for combo */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px) rotate(-1deg); }
+  75% { transform: translateX(2px) rotate(1deg); }
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* Pop animation for upgrades */
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.animate-pop {
+  animation: pop 0.2s ease-out;
+}
+
+/* Glow text effect */
+@keyframes glow-text {
+  0%, 100% {
+    text-shadow: 0 0 5px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 20px currentColor, 0 0 30px currentColor;
+  }
+}
+
+.animate-glow-text {
+  animation: glow-text 1.5s ease-in-out infinite;
+}
+
+/* Rainbow border (for special events) */
+@keyframes rainbow-border {
+  0% { border-color: #e63946; }
+  16% { border-color: #f4a261; }
+  33% { border-color: #e9c46a; }
+  50% { border-color: #52b788; }
+  66% { border-color: #4361ee; }
+  83% { border-color: #7209b7; }
+  100% { border-color: #e63946; }
+}
+
+.animate-rainbow-border {
+  animation: rainbow-border 3s linear infinite;
+}
+
+/* ============================================
+   UI COMPONENTS
+   ============================================ */
+
+/* Button base styles */
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }
 
-/* Better touch feedback */
-button {
-  -webkit-tap-highlight-color: transparent;
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(217, 119, 6, 0.5);
-  border-radius: 3px;
+  background: rgba(244, 162, 97, 0.6);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(244, 162, 97, 0.8);
+}
+
+/* Focus styles */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #f4a261;
+  outline-offset: 2px;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(244, 162, 97, 0.4);
+  color: white;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+
+@media (max-width: 380px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 768px) {
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+  }
+
+  body > div:first-child {
+    max-width: 420px;
+    width: 100%;
+    min-height: 100vh;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ============================================
+   SPECIAL EFFECTS
+   ============================================ */
+
+/* Scanlines overlay (optional retro effect) */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.1),
+    rgba(0, 0, 0, 0.1) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+}
+
+/* CRT glow effect */
+.crt-glow {
+  box-shadow:
+    inset 0 0 60px rgba(244, 162, 97, 0.1),
+    0 0 20px rgba(244, 162, 97, 0.1);
+}
+
+/* Vignette effect */
+.vignette::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    circle at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
+  pointer-events: none;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.no-drag {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* Text shadow for readability on busy backgrounds */
+.text-shadow {
+  text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(90deg, #f4a261, #e76f51, #e63946);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
