@@ -151,48 +151,55 @@ interface CharacterProps {
   animate?: boolean;
 }
 
-// Create a character pixel grid (12x16)
+// Create a character pixel grid (12x18) - taller for better proportions
 function createCharacterPixels(
   skinColor: string,
   shirtColor: string,
   glassesFrame: string,
-  glassesLens: string
+  glassesLens: string,
+  hairColor: string = PALETTE.coffee
 ): (string | null)[][] {
   const s = skinColor;
   const t = shirtColor;
   const f = glassesFrame;
   const l = glassesLens;
-  const h = PALETTE.coffee; // hair
+  const h = hairColor;
+  const b = PALETTE.black;
 
   return [
-    // Row 0-2: Hair
+    // Row 0-2: Hair (fluffy top)
+    [null, null, null, null, h, h, h, h, null, null, null, null],
     [null, null, null, h, h, h, h, h, h, null, null, null],
     [null, null, h, h, h, h, h, h, h, h, null, null],
-    [null, h, h, h, h, h, h, h, h, h, h, null],
-    // Row 3: Forehead
-    [null, h, s, s, s, s, s, s, s, s, h, null],
-    // Row 4-5: Glasses
-    [null, f, f, f, f, f, f, f, f, f, f, null],
-    [null, f, l, l, f, f, f, f, l, l, f, null],
-    // Row 6: Nose/cheeks
+    // Row 3: Hair meets forehead
+    [null, null, h, s, s, s, s, s, s, h, null, null],
+    // Row 4-6: Glasses (THE ICONIC NOUNS LOOK)
+    [null, b, b, b, b, b, b, b, b, b, b, null],
+    [null, b, l, l, b, b, b, b, l, l, b, null],
+    [null, b, l, l, b, null, null, b, l, l, b, null],
+    // Row 7: Nose
     [null, null, s, s, s, s, s, s, s, s, null, null],
-    // Row 7: Mouth
-    [null, null, s, s, s, PALETTE.nounRed, PALETTE.nounRed, s, s, s, null, null],
-    // Row 8-9: Neck
-    [null, null, null, s, s, s, s, s, s, null, null, null],
+    // Row 8: Mouth (small smile)
+    [null, null, null, s, s, b, b, s, s, null, null, null],
+    // Row 9: Chin/neck
     [null, null, null, null, s, s, s, s, null, null, null, null],
-    // Row 10-13: Shirt
+    // Row 10-14: Shirt body
+    [null, null, null, t, t, t, t, t, t, null, null, null],
     [null, null, t, t, t, t, t, t, t, t, null, null],
-    [null, t, t, t, t, t, t, t, t, t, t, null],
-    [s, t, t, t, t, t, t, t, t, t, t, s],
-    [s, t, t, t, t, t, t, t, t, t, t, s],
-    // Row 14-15: Arms/bottom
+    [null, s, t, t, t, t, t, t, t, t, s, null],
     [null, s, t, t, t, t, t, t, t, t, s, null],
     [null, null, t, t, t, t, t, t, t, t, null, null],
+    // Row 15-17: Legs (pants)
+    [null, null, null, b, b, null, null, b, b, null, null, null],
+    [null, null, null, b, b, null, null, b, b, null, null, null],
+    [null, null, null, b, b, null, null, b, b, null, null, null],
   ];
 }
 
 const SKIN_TONES = [PALETTE.skin1, PALETTE.skin2, PALETTE.skin3, PALETTE.skin4, PALETTE.skin5];
+
+// Hair colors for variety
+const HAIR_COLORS = [PALETTE.coffee, PALETTE.black, '#8B4513', '#FFD700', '#C04000', '#2F1B14'];
 
 export function Character({
   skinTone = 0,
@@ -201,12 +208,14 @@ export function Character({
   size = 4,
   className = '',
   animate = false,
-}: CharacterProps) {
+  hairStyle = 0,
+}: CharacterProps & { hairStyle?: number }) {
   const skin = SKIN_TONES[skinTone % SKIN_TONES.length];
   const glasses = GLASSES_STYLES[glassesStyle % GLASSES_STYLES.length];
+  const hair = HAIR_COLORS[hairStyle % HAIR_COLORS.length];
   const pixels = useMemo(
-    () => createCharacterPixels(skin, shirtColor, glasses.frame, glasses.lens),
-    [skin, shirtColor, glasses]
+    () => createCharacterPixels(skin, shirtColor, glasses.frame, glasses.lens, hair),
+    [skin, shirtColor, glasses, hair]
   );
   const boxShadow = useMemo(() => createPixelArt(pixels, size), [pixels, size]);
 
@@ -215,7 +224,7 @@ export function Character({
       className={`${className} ${animate ? 'animate-bounce' : ''}`}
       style={{
         width: 12 * size,
-        height: 16 * size,
+        height: 18 * size,
         position: 'relative',
         animationDuration: animate ? '2s' : undefined,
       }}
@@ -247,34 +256,39 @@ interface CoffeeMugProps {
 function createMugPixels(fillPercent: number = 100): (string | null)[][] {
   const w = PALETTE.white;
   const b = PALETTE.black;
-  const c = fillPercent > 50 ? PALETTE.coffee : PALETTE.coffeeLight;
+  const c = PALETTE.coffee;
   const cr = PALETTE.coffeeCream;
+  const m = PALETTE.coffeeCream; // Mug color (cream colored)
+  const g = PALETTE.nounGreen; // Nouns accent
 
-  // 14x16 pixel mug with handle
+  // 16x18 pixel mug with handle and Nouns glasses design!
   return [
-    // Steam area (rows 0-2)
-    [null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-    [null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-    [null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-    // Mug top rim (row 3)
-    [null, null, b, b, b, b, b, b, b, b, b, null, null, null],
-    // Mug interior top (row 4)
-    [null, b, w, w, w, w, w, w, w, w, w, b, null, null],
-    // Coffee surface with cream (row 5)
-    [null, b, w, cr, cr, c, c, c, cr, cr, w, b, b, null],
-    // Coffee body (rows 6-10)
-    [null, b, w, c, c, c, c, c, c, c, w, b, b, b],
-    [null, b, w, c, c, c, c, c, c, c, w, b, w, b],
-    [null, b, w, c, c, c, c, c, c, c, w, b, w, b],
-    [null, b, w, c, c, c, c, c, c, c, w, b, w, b],
-    [null, b, w, c, c, c, c, c, c, c, w, b, b, b],
-    // Mug bottom (rows 11-12)
-    [null, b, w, w, w, w, w, w, w, w, w, b, b, null],
-    [null, null, b, b, b, b, b, b, b, b, b, null, null, null],
-    // Saucer (rows 13-15)
-    [null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-    [null, b, b, b, b, b, b, b, b, b, b, b, b, null],
-    [b, w, w, w, w, w, w, w, w, w, w, w, w, b],
+    // Steam area (rows 0-3) - animated separately
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    // Mug top rim (row 4)
+    [null, null, null, b, b, b, b, b, b, b, b, b, b, null, null, null],
+    // Mug interior top (row 5)
+    [null, null, b, m, m, m, m, m, m, m, m, m, m, b, null, null],
+    // Coffee surface with foam art (rows 6-7)
+    [null, null, b, m, cr, cr, c, c, c, c, cr, cr, m, b, b, null],
+    [null, null, b, m, c, c, cr, cr, cr, cr, c, c, m, b, b, b],
+    // Coffee body (rows 8-12)
+    [null, null, b, m, c, c, c, c, c, c, c, c, m, b, m, b],
+    [null, null, b, m, c, c, c, c, c, c, c, c, m, b, m, b],
+    [null, null, b, m, c, c, c, c, c, c, c, c, m, b, m, b],
+    [null, null, b, m, c, c, c, c, c, c, c, c, m, b, m, b],
+    [null, null, b, m, c, c, c, c, c, c, c, c, m, b, b, b],
+    // Nouns glasses decoration on mug! (rows 13)
+    [null, null, b, m, b, b, b, m, m, b, b, b, m, b, b, null],
+    // Mug bottom (row 14)
+    [null, null, null, b, m, m, m, m, m, m, m, m, b, null, null, null],
+    // Saucer (rows 15-17)
+    [null, null, null, null, b, b, b, b, b, b, b, b, null, null, null, null],
+    [null, b, b, b, b, m, m, m, m, m, m, b, b, b, b, null],
+    [b, m, m, m, m, m, m, m, m, m, m, m, m, m, m, b],
   ];
 }
 
@@ -286,8 +300,8 @@ export function CoffeeMug({ size = 6, fillPercent = 100, className = '', hasStea
     <div
       className={`relative ${className}`}
       style={{
-        width: 14 * size,
-        height: 16 * size,
+        width: 16 * size,
+        height: 18 * size,
       }}
     >
       {/* Steam */}

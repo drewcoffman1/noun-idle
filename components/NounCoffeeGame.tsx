@@ -54,7 +54,7 @@ export default function NounCoffeeGame({ fid }: NounCoffeeGameProps) {
   const [state, setState] = useState<GameStateV2>(() => createInitialStateV2(fid));
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'shop' | 'upgrades' | 'staff' | 'prestige'>('shop');
+  const [activeTab, setActiveTab] = useState<'shop' | 'upgrades' | 'staff' | 'prestige' | 'noun'>('shop');
   const [floatingNumbers, setFloatingNumbers] = useState<Array<{ id: number; value: string; x: number; y: number; color: string }>>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'warning' | 'info' } | null>(null);
   const [showPrestigeModal, setShowPrestigeModal] = useState(false);
@@ -498,7 +498,7 @@ export default function NounCoffeeGame({ fid }: NounCoffeeGameProps) {
       {/* TAB BAR */}
       {/* ============================================ */}
       <div className="flex" style={{ background: PALETTE.bgMid, borderTop: `2px solid ${PALETTE.black}` }}>
-        {(['shop', 'upgrades', 'staff', 'prestige'] as const).map(tab => (
+        {(['shop', 'upgrades', 'staff', 'prestige', 'noun'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -506,14 +506,14 @@ export default function NounCoffeeGame({ fid }: NounCoffeeGameProps) {
             style={{
               background: activeTab === tab ? PALETTE.bgLight : 'transparent',
               color: activeTab === tab ? PALETTE.white : PALETTE.gray,
-              borderBottom: activeTab === tab ? `3px solid ${PALETTE.nounYellow}` : '3px solid transparent',
+              borderBottom: activeTab === tab ? `3px solid ${tab === 'noun' ? PALETTE.nounBlue : PALETTE.nounYellow}` : '3px solid transparent',
             }}
           >
             {tab === 'shop' && '🏪'}
             {tab === 'upgrades' && '⬆️'}
             {tab === 'staff' && '👥'}
             {tab === 'prestige' && '🔥'}
-            <span className="ml-1 hidden sm:inline">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
+            {tab === 'noun' && '⌐◨-◨'}
           </button>
         ))}
       </div>
@@ -842,6 +842,195 @@ export default function NounCoffeeGame({ fid }: NounCoffeeGameProps) {
                   <span style={{ color: PALETTE.coffeeCream }}>{formatNumber(state.prestigeStats.totalBeansEarned)}</span>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* $NOUN TAB */}
+        {activeTab === 'noun' && (
+          <div className="space-y-4">
+            {/* $NOUN Header */}
+            <div
+              className="p-4 rounded-lg text-center"
+              style={{ background: `linear-gradient(135deg, ${PALETTE.nounBlue} 0%, ${PALETTE.nounPurple} 100%)`, border: `3px solid ${PALETTE.black}` }}
+            >
+              <div className="text-4xl mb-2">⌐◨-◨</div>
+              <div className="font-bold text-2xl mb-1" style={{ color: PALETTE.white }}>
+                $NOUN Integration
+              </div>
+              <div className="text-sm" style={{ color: PALETTE.coffeeCream }}>
+                Connect your wallet to unlock premium features
+              </div>
+            </div>
+
+            {/* Current Balance */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ background: PALETTE.bgMid, border: `2px solid ${PALETTE.nounBlue}` }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs" style={{ color: PALETTE.gray }}>Your Balance</div>
+                  <div className="text-2xl font-bold" style={{ color: PALETTE.nounBlue }}>
+                    {formatNumber(state.currency.nounTokens)} $NOUN
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs" style={{ color: PALETTE.gray }}>Staked</div>
+                  <div className="text-xl font-bold" style={{ color: PALETTE.success }}>
+                    {formatNumber(state.stakedNoun)} $NOUN
+                  </div>
+                </div>
+              </div>
+
+              {state.stakedNoun > 0 && (
+                <div className="text-sm p-2 rounded" style={{ background: PALETTE.bgLight }}>
+                  <span style={{ color: PALETTE.success }}>+{state.stakedNoun}% production bonus</span>
+                  <span style={{ color: PALETTE.gray }}> from staking</span>
+                </div>
+              )}
+            </div>
+
+            {/* Staking */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ background: PALETTE.bgMid, border: `2px solid ${PALETTE.black}` }}
+            >
+              <div className="font-bold mb-2" style={{ color: PALETTE.white }}>Stake $NOUN</div>
+              <div className="text-sm mb-3" style={{ color: PALETTE.gray }}>
+                Stake $NOUN tokens for permanent production bonuses. Each staked token gives +1% production!
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 5, 10].map(amount => (
+                  <button
+                    key={amount}
+                    onClick={() => {
+                      if (state.currency.nounTokens >= amount) {
+                        setState(prev => ({
+                          ...prev,
+                          currency: { ...prev.currency, nounTokens: prev.currency.nounTokens - amount },
+                          stakedNoun: prev.stakedNoun + amount,
+                        }));
+                        showNotification(`Staked ${amount} $NOUN!`, 'success');
+                      }
+                    }}
+                    disabled={state.currency.nounTokens < amount}
+                    className="py-2 rounded font-bold transition-all hover:scale-105 disabled:opacity-50"
+                    style={{
+                      background: state.currency.nounTokens >= amount ? PALETTE.nounBlue : PALETTE.gray,
+                      color: PALETTE.white,
+                      border: `2px solid ${PALETTE.black}`,
+                    }}
+                  >
+                    Stake {amount}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Premium Upgrades */}
+            <div className="font-bold" style={{ color: PALETTE.nounBlue }}>Premium Upgrades</div>
+            {UPGRADES.filter(u => u.currency === 'nounTokens').map(upgrade => {
+              const level = getUpgradeLevel(state, upgrade.id);
+              const maxed = level >= upgrade.maxLevel;
+              const cost = getUpgradeCost(upgrade, level);
+              const affordable = state.currency.nounTokens >= cost;
+
+              return (
+                <button
+                  key={upgrade.id}
+                  onClick={() => buyUpgrade(upgrade)}
+                  disabled={maxed || !affordable}
+                  className="w-full p-3 rounded-lg flex items-center justify-between transition-all"
+                  style={{
+                    background: maxed ? PALETTE.bgLight : affordable ? PALETTE.bgMid : PALETTE.bgDark,
+                    border: `2px solid ${maxed ? PALETTE.success : affordable ? PALETTE.nounBlue : PALETTE.gray}`,
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{upgrade.icon}</span>
+                    <div className="text-left">
+                      <div className="font-bold" style={{ color: PALETTE.white }}>
+                        {upgrade.name}
+                      </div>
+                      <div className="text-xs" style={{ color: PALETTE.gray }}>
+                        {upgrade.description}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs" style={{ color: PALETTE.gray }}>
+                      {level}/{upgrade.maxLevel}
+                    </div>
+                    {maxed ? (
+                      <div className="font-bold" style={{ color: PALETTE.success }}>MAX</div>
+                    ) : (
+                      <div
+                        className="font-bold"
+                        style={{ color: affordable ? PALETTE.nounBlue : PALETTE.gray }}
+                      >
+                        {formatShort(cost)} $NOUN
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+
+            {/* Daily Spin */}
+            <div
+              className="p-4 rounded-lg"
+              style={{ background: PALETTE.bgMid, border: `2px solid ${PALETTE.nounPurple}` }}
+            >
+              <div className="font-bold mb-2" style={{ color: PALETTE.nounPurple }}>🎰 Daily Spin</div>
+              <div className="text-sm mb-3" style={{ color: PALETTE.gray }}>
+                Spend 1 $NOUN for a chance to win big rewards!
+              </div>
+              <button
+                onClick={() => {
+                  if (state.currency.nounTokens >= 1) {
+                    const roll = Math.random();
+                    let reward = 0;
+                    let message = '';
+
+                    if (roll < 0.4) {
+                      reward = 500;
+                      message = 'Won 500 beans!';
+                    } else if (roll < 0.7) {
+                      reward = 2000;
+                      message = 'Won 2,000 beans!';
+                    } else if (roll < 0.9) {
+                      reward = 10000;
+                      message = 'JACKPOT! Won 10,000 beans!';
+                    } else {
+                      reward = 2;
+                      message = 'MEGA WIN! Won 2 $NOUN back!';
+                    }
+
+                    setState(prev => ({
+                      ...prev,
+                      currency: {
+                        ...prev.currency,
+                        nounTokens: prev.currency.nounTokens - 1 + (roll >= 0.9 ? reward : 0),
+                        beans: prev.currency.beans + (roll < 0.9 ? reward : 0),
+                      },
+                      lastDailySpin: Date.now(),
+                    }));
+
+                    showNotification(message, roll >= 0.7 ? 'success' : 'info');
+                  }
+                }}
+                disabled={state.currency.nounTokens < 1}
+                className="w-full py-3 rounded-lg font-bold text-lg transition-all hover:scale-105 disabled:opacity-50"
+                style={{
+                  background: state.currency.nounTokens >= 1 ? PALETTE.nounPurple : PALETTE.gray,
+                  color: PALETTE.white,
+                  border: `3px solid ${PALETTE.black}`,
+                }}
+              >
+                Spin (1 $NOUN)
+              </button>
             </div>
           </div>
         )}
