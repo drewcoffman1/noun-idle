@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "YOUR_HEADER_HERE",
+    "payload": "YOUR_PAYLOAD_HERE",
+    "signature": "YOUR_SIGNATURE_HERE"
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "Noun Idle",
+    "homeUrl": "https://YOUR_DOMAIN_HERE",
+    "iconUrl": "https://YOUR_DOMAIN_HERE/icon.png",
+    "splashBackgroundColor": "#171717",
+    "subtitle": "Brew coffee, earn beans",
+    "description": "An idle coffee shop game. Tap to brew, hire baristas, upgrade machines, and spend $NOUN for premium boosts.",
+    "categories": ["games"],
+    "tags": ["idle", "clicker", "coffee", "noun"]
+  }
+}
