@@ -41,6 +41,9 @@ export interface GameState {
   ordersCompleted: number
   totalOrdersCompleted: number  // Never resets
 
+  // Recipe Mastery - tracks how many of each drink made
+  drinksMade: Record<string, number>
+
   // Upgrade levels (for cost calculation)
   upgradeLevels: {
     // Tier 1 - Basic
@@ -540,9 +543,10 @@ export function generateOrder(state: GameState, customNames: string[] = []): Ord
   const allNames = [...CUSTOMER_NAMES, ...customNames]
   const customerName = allNames[Math.floor(Math.random() * allNames.length)]
 
-  // Calculate multipliers
+  // Calculate multipliers including mastery bonus for this specific drink
   const achievementBonus = getAchievementBonus(state, 'value')
-  const valueMultiplier = (1 + (state.upgradeLevels.orderValue * 0.2) + state.franchiseBonus + state.empireBonus + state.dynastyBonus + achievementBonus) * customerType.valueMultiplier
+  const masteryBonus = getMasteryBonus(state, drinkType.drink)
+  const valueMultiplier = (1 + (state.upgradeLevels.orderValue * 0.2) + state.franchiseBonus + state.empireBonus + state.dynastyBonus + achievementBonus + masteryBonus) * customerType.valueMultiplier
   const workReduction = 1 - (state.upgradeLevels.serviceSpeed * 0.05)
 
   const isSpecial = customerType.valueMultiplier > 1.5
@@ -573,6 +577,7 @@ export function createInitialState(): GameState {
     currentOrder: null,
     ordersCompleted: 0,
     totalOrdersCompleted: 0,
+    drinksMade: {},
     tapPower: 1,
     baristas: 0,
     upgradeLevels: {
@@ -695,6 +700,120 @@ export const CUSTOM_NAME_COST = 100000
 // For backwards compatibility
 export const MENU = ALL_DRINKS.filter(d => d.unlocksAt === 0)
 export const CUSTOMER_EMOJIS = ALL_CUSTOMERS.filter(c => c.unlocksAt.count === 0).map(c => c.emoji)
+
+// ============================================
+// RECIPE MASTERY SYSTEM
+// ============================================
+
+export interface MasteryTier {
+  count: number        // Drinks made to reach this tier
+  beanBonus: number    // % bonus beans for this drink
+  tierName: string
+  emoji: string
+}
+
+export const MASTERY_TIERS: MasteryTier[] = [
+  { count: 0, beanBonus: 0, tierName: 'Novice', emoji: '⚪' },
+  { count: 50, beanBonus: 10, tierName: 'Apprentice', emoji: '🟢' },
+  { count: 200, beanBonus: 25, tierName: 'Skilled', emoji: '🔵' },
+  { count: 500, beanBonus: 50, tierName: 'Expert', emoji: '🟣' },
+  { count: 1000, beanBonus: 100, tierName: 'Master', emoji: '🟡' },
+  { count: 5000, beanBonus: 200, tierName: 'Legendary', emoji: '🔴' },
+]
+
+export function getMasteryTier(drinksMade: number): MasteryTier {
+  for (let i = MASTERY_TIERS.length - 1; i >= 0; i--) {
+    if (drinksMade >= MASTERY_TIERS[i].count) {
+      return MASTERY_TIERS[i]
+    }
+  }
+  return MASTERY_TIERS[0]
+}
+
+export function getNextMasteryTier(drinksMade: number): MasteryTier | null {
+  for (const tier of MASTERY_TIERS) {
+    if (drinksMade < tier.count) {
+      return tier
+    }
+  }
+  return null // Max tier reached
+}
+
+export function getMasteryBonus(state: GameState, drinkName: string): number {
+  const made = state.drinksMade[drinkName] || 0
+  const tier = getMasteryTier(made)
+  return tier.beanBonus / 100 // Return as multiplier (e.g., 0.25 for 25%)
+}
+
+export function getTotalMasteryLevel(state: GameState): number {
+  // Sum up all mastery progress across all drinks
+  let total = 0
+  for (const drink of ALL_DRINKS) {
+    const made = state.drinksMade[drink.drink] || 0
+    const tier = getMasteryTier(made)
+    total += MASTERY_TIERS.indexOf(tier)
+  }
+  return total
+}
+
+// ============================================
+// OFFLINE EARNINGS
+// ============================================
+
+export const MAX_OFFLINE_HOURS = 8
+export const OFFLINE_EFFICIENCY = 0.5 // Earn 50% of normal rate while offline
+
+export interface OfflineEarnings {
+  beans: number
+  timeAway: number // in seconds
+  ordersEstimated: number
+}
+
+export function calculateOfflineEarnings(state: GameState, lastActiveTime: number): OfflineEarnings {
+  const now = Date.now()
+  const timeAwayMs = now - lastActiveTime
+  const timeAwaySec = Math.min(timeAwayMs / 1000, MAX_OFFLINE_HOURS * 60 * 60)
+
+  if (timeAwaySec < 60) {
+    // Less than a minute, no offline earnings
+    return { beans: 0, timeAway: 0, ordersEstimated: 0 }
+  }
+
+  // Calculate beans per second from baristas
+  const baristaEffectiveness = getBaristaEffectiveness(state)
+  const baristaWorkPerSec = state.baristas * baristaEffectiveness * 2 // 2 work per barista per second
+  const avgWorkPerOrder = 15 * (1 - state.upgradeLevels.serviceSpeed * 0.05)
+  const ordersPerSec = state.baristas > 0 ? baristaWorkPerSec / Math.max(5, avgWorkPerOrder) : 0
+
+  // Calculate average order value
+  const achievementBonus = getAchievementBonus(state, 'value')
+  const avgOrderValue = 10 * (1 + state.upgradeLevels.orderValue * 0.2 +
+    state.franchiseBonus + state.empireBonus + state.dynastyBonus + achievementBonus)
+
+  // Passive income from Coffee Empire upgrade
+  const passivePerSec = state.upgradeLevels.coffeeEmpire * 10
+
+  // Total beans per second
+  const beansPerSec = (ordersPerSec * avgOrderValue + passivePerSec) * OFFLINE_EFFICIENCY
+
+  const totalBeans = Math.floor(beansPerSec * timeAwaySec)
+  const totalOrders = Math.floor(ordersPerSec * timeAwaySec * OFFLINE_EFFICIENCY)
+
+  return {
+    beans: totalBeans,
+    timeAway: timeAwaySec,
+    ordersEstimated: totalOrders,
+  }
+}
+
+export function formatTimeAway(seconds: number): string {
+  if (seconds < 60) return 'less than a minute'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes`
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  if (mins === 0) return `${hours} hour${hours !== 1 ? 's' : ''}`
+  return `${hours}h ${mins}m`
+}
 
 // ============================================
 // DAILY CHALLENGES

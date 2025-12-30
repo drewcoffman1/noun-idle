@@ -9,6 +9,7 @@ import {
   Order,
   Achievement,
   ChallengeState,
+  OfflineEarnings,
   UPGRADES,
   FRANCHISE_MILESTONES,
   EMPIRE_MILESTONES,
@@ -16,6 +17,7 @@ import {
   ACHIEVEMENTS,
   CUSTOMER_NAMES,
   ALL_DRINKS,
+  MASTERY_TIERS,
   generateOrder,
   getUpgradeCost,
   getUpgradeNounCost,
@@ -38,6 +40,10 @@ import {
   getMaxQueueSize,
   getBaristaEffectiveness,
   getTotalMultiplier,
+  getMasteryTier,
+  getNextMasteryTier,
+  calculateOfflineEarnings,
+  formatTimeAway,
   CUSTOM_NAME_COST,
   UpgradeId,
   shouldResetChallenge,
@@ -46,7 +52,7 @@ import {
 } from '@/lib/game'
 import { NOUN_TOKEN_ADDRESS, BURN_ADDRESS, ERC20_ABI } from '@/lib/constants'
 
-const STORAGE_KEY = 'noun-idle-v5-save'
+const STORAGE_KEY = 'noun-idle-v6-save'
 
 export default function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState)
@@ -68,6 +74,7 @@ export default function Game() {
   const [sessionUpgrades, setSessionUpgrades] = useState(0)
   const [sessionBeans, setSessionBeans] = useState(0)
   const [sessionOrders, setSessionOrders] = useState(0)
+  const [offlineEarnings, setOfflineEarnings] = useState<OfflineEarnings | null>(null)
 
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null)
   const customNamesRef = useRef<string[]>([])
@@ -198,6 +205,7 @@ export default function Game() {
     if (!parsed.totalLifetimeBeans) parsed.totalLifetimeBeans = parsed.lifetimeBeans || 0
     if (!parsed.totalOrdersCompleted) parsed.totalOrdersCompleted = parsed.ordersCompleted || 0
     if (!parsed.unlockedAchievements) parsed.unlockedAchievements = []
+    if (!parsed.drinksMade) parsed.drinksMade = {}
     return parsed
   }
 
@@ -231,12 +239,25 @@ export default function Game() {
     loadCloudSave()
   }, [address, cloudSaveLoaded])
 
-  // Load local save on startup (before wallet connects)
+  // Load local save on startup (before wallet connects) and calculate offline earnings
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       try {
         const parsed = migrateSave(JSON.parse(saved) as GameState)
+
+        // Calculate offline earnings if player has baristas or passive income
+        if (parsed.baristas > 0 || parsed.upgradeLevels.coffeeEmpire > 0) {
+          const earnings = calculateOfflineEarnings(parsed, parsed.lastUpdate)
+          if (earnings.beans > 0) {
+            setOfflineEarnings(earnings)
+            // Add earnings to state
+            parsed.beans += earnings.beans
+            parsed.lifetimeBeans += earnings.beans
+            parsed.totalLifetimeBeans += earnings.beans
+          }
+        }
+
         setGameState(parsed)
       } catch (e) {
         console.error('Failed to load save:', e)
@@ -312,6 +333,13 @@ export default function Game() {
             let payment = updated.currentOrder.value
             if (prev.upgradeLevels.tippingCulture > 0 && Math.random() < prev.upgradeLevels.tippingCulture * 0.05) {
               payment = Math.floor(payment * 1.5)
+            }
+
+            // Track drink made for mastery
+            const drinkName = updated.currentOrder.drink
+            updated.drinksMade = {
+              ...prev.drinksMade,
+              [drinkName]: (prev.drinksMade[drinkName] || 0) + 1,
             }
 
             updated.beans = prev.beans + payment
@@ -403,6 +431,9 @@ export default function Game() {
         const nextOrder = prev.orderQueue.length > 0 ? prev.orderQueue[0] : null
         const newQueue = prev.orderQueue.slice(1)
 
+        // Track drink made for mastery
+        const drinkName = prev.currentOrder.drink
+
         return {
           ...prev,
           beans: prev.beans + payment,
@@ -410,6 +441,10 @@ export default function Game() {
           totalLifetimeBeans: prev.totalLifetimeBeans + payment,
           ordersCompleted: prev.ordersCompleted + 1,
           totalOrdersCompleted: prev.totalOrdersCompleted + 1,
+          drinksMade: {
+            ...prev.drinksMade,
+            [drinkName]: (prev.drinksMade[drinkName] || 0) + 1,
+          },
           currentOrder: nextOrder,
           orderQueue: newQueue,
         }
@@ -555,7 +590,47 @@ export default function Game() {
 
   return (
     <div className="min-h-screen flex flex-col px-4 py-4 max-w-md mx-auto">
-      {/* Drink info modal */}
+      {/* Offline earnings modal */}
+      {offlineEarnings && offlineEarnings.beans > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => setOfflineEarnings(null)}
+        >
+          <div
+            className="bg-gradient-to-b from-silver-800 to-silver-900 border border-amber-500/30 rounded-2xl p-5 max-w-xs w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <div className="text-5xl mb-3">☕</div>
+              <h3 className="text-xl font-bold text-silver-100 mb-1">Welcome Back!</h3>
+              <p className="text-silver-400 text-sm mb-4">
+                Your baristas kept working while you were away for {formatTimeAway(offlineEarnings.timeAway)}
+              </p>
+
+              <div className="bg-silver-900/50 rounded-xl p-4 mb-4">
+                <div className="text-amber-300 text-3xl font-bold">
+                  +{formatNumber(offlineEarnings.beans)}
+                </div>
+                <div className="text-silver-400 text-sm">beans earned</div>
+                {offlineEarnings.ordersEstimated > 0 && (
+                  <div className="text-silver-500 text-xs mt-1">
+                    ~{formatNumber(offlineEarnings.ordersEstimated)} orders completed
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setOfflineEarnings(null)}
+                className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl"
+              >
+                Collect!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drink info modal with mastery */}
       {selectedDrink && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
@@ -565,27 +640,70 @@ export default function Game() {
             className="bg-silver-900 border border-silver-700 rounded-2xl p-4 max-w-xs w-full shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-center mb-3">
-              <span className="text-4xl">{selectedDrink.emoji}</span>
-              <h3 className="text-xl font-bold text-silver-100 mt-2">{selectedDrink.drink}</h3>
-            </div>
-            {selectedDrink.origin && (
-              <div className="text-amber-400 text-sm text-center mb-1">{selectedDrink.origin}</div>
-            )}
-            {selectedDrink.notes && (
-              <div className="text-silver-300 text-sm text-center mb-2">
-                <span className="text-silver-500">Notes:</span> {selectedDrink.notes}
-              </div>
-            )}
-            {selectedDrink.description && (
-              <div className="text-silver-400 text-xs text-center">{selectedDrink.description}</div>
-            )}
-            <button
-              onClick={() => setSelectedDrink(null)}
-              className="w-full mt-4 py-2 bg-silver-800 text-silver-300 rounded-lg text-sm"
-            >
-              Close
-            </button>
+            {(() => {
+              const made = gameState.drinksMade[selectedDrink.drink] || 0
+              const currentTier = getMasteryTier(made)
+              const nextTier = getNextMasteryTier(made)
+              return (
+                <>
+                  <div className="text-center mb-3">
+                    <span className="text-4xl">{selectedDrink.emoji}</span>
+                    <h3 className="text-xl font-bold text-silver-100 mt-2">{selectedDrink.drink}</h3>
+                  </div>
+
+                  {/* Mastery section */}
+                  <div className="bg-silver-800/50 rounded-lg p-3 mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span>{currentTier.emoji}</span>
+                        <span className="text-silver-200 font-medium">{currentTier.tierName}</span>
+                      </div>
+                      {currentTier.beanBonus > 0 && (
+                        <span className="text-green-400 text-sm">+{currentTier.beanBonus}% beans</span>
+                      )}
+                    </div>
+                    <div className="text-silver-400 text-xs mb-1">
+                      {formatNumber(made)} made
+                    </div>
+                    {nextTier && (
+                      <>
+                        <div className="h-2 bg-silver-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500"
+                            style={{ width: `${Math.min(100, (made / nextTier.count) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-silver-500 mt-1">
+                          <span>{formatNumber(made)}/{formatNumber(nextTier.count)}</span>
+                          <span>{nextTier.emoji} {nextTier.tierName} (+{nextTier.beanBonus}%)</span>
+                        </div>
+                      </>
+                    )}
+                    {!nextTier && (
+                      <div className="text-center text-amber-300 text-xs">Max Mastery!</div>
+                    )}
+                  </div>
+
+                  {selectedDrink.origin && (
+                    <div className="text-amber-400 text-sm text-center mb-1">{selectedDrink.origin}</div>
+                  )}
+                  {selectedDrink.notes && (
+                    <div className="text-silver-300 text-sm text-center mb-2">
+                      <span className="text-silver-500">Notes:</span> {selectedDrink.notes}
+                    </div>
+                  )}
+                  {selectedDrink.description && (
+                    <div className="text-silver-400 text-xs text-center">{selectedDrink.description}</div>
+                  )}
+                  <button
+                    onClick={() => setSelectedDrink(null)}
+                    className="w-full mt-4 py-2 bg-silver-800 text-silver-300 rounded-lg text-sm"
+                  >
+                    Close
+                  </button>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}
@@ -1045,6 +1163,33 @@ export default function Game() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Recipe Mastery */}
+            <div className="bg-silver-800/50 border border-silver-700/50 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-bold text-silver-100 text-sm">📖 Recipe Mastery</div>
+                <div className="text-xs text-silver-400">
+                  Tap drinks to see details
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {ALL_DRINKS.filter(d => d.unlocksAt <= gameState.totalOrdersCompleted).map(drink => {
+                  const made = gameState.drinksMade[drink.drink] || 0
+                  const tier = getMasteryTier(made)
+                  return (
+                    <button
+                      key={drink.drink}
+                      onClick={() => setSelectedDrink(drink)}
+                      className="flex flex-col items-center p-2 bg-silver-900/50 rounded-lg hover:bg-silver-700/50 transition-colors"
+                    >
+                      <span className="text-xl">{drink.emoji}</span>
+                      <span className="text-[10px] text-silver-400 truncate w-full text-center">{drink.drink}</span>
+                      <span className="text-xs">{tier.emoji}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             {/* Achievements compact */}
