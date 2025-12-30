@@ -1,8 +1,10 @@
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
-// Initialize Redis (will use UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN env vars)
-const redis = Redis.fromEnv()
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+})
 
 const NAMES_KEY = 'noun-idle:custom-names'
 const MAX_NAMES = 100 // Keep last 100 custom names

@@ -1,7 +1,10 @@
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
-const redis = Redis.fromEnv()
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+})
 
 const LEADERBOARD_KEY = 'noun-idle:leaderboard'
 const NAMES_KEY = 'noun-idle:player-names'
