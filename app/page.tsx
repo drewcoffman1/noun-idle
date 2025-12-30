@@ -330,10 +330,10 @@ export default function Game() {
           updated.lastCustomerTime = now
         }
 
-        // Tick patience for waiting customers
+        // Tick patience for waiting customers (use updated.waitingCustomers to include new arrivals)
         const patienceLossPerTick = 0.1  // Lose 0.1 patience per tick (100ms) = 1 per second
         let customersWhoLeft: string[] = []
-        updated.waitingCustomers = prev.waitingCustomers
+        updated.waitingCustomers = updated.waitingCustomers
           .map(customer => ({
             ...customer,
             patience: customer.patience - patienceLossPerTick,
