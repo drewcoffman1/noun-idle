@@ -5,7 +5,7 @@
 // Unlockable: Drinks, Customers, Upgrades, Achievements
 // ============================================
 
-// A customer waiting in line (no drink assigned yet)
+// A customer waiting in line
 export interface WaitingCustomer {
   id: string
   customerName: string
@@ -15,8 +15,10 @@ export interface WaitingCustomer {
   patience: number      // Current patience (decreases over time)
   maxPatience: number   // Starting patience
   arrivedAt: number     // Timestamp
+  desiredDrink: string  // What they actually want
+  desiredDrinkEmoji: string
   isRegular?: boolean   // Is this a returning regular?
-  preferredDrink?: string  // If regular, what's their usual?
+  preferredDrink?: string  // If regular, what's their usual? (for hint)
 }
 
 // An order being worked on (drink has been selected)
@@ -570,9 +572,10 @@ export function checkNewAchievements(state: GameState): Achievement[] {
 // CUSTOMER GENERATION (New System)
 // ============================================
 
-// Generate a customer who arrives and waits (no drink yet)
+// Generate a customer who arrives and waits
 export function generateCustomer(state: GameState, customNames: string[] = []): WaitingCustomer {
   const unlockedCustomers = getUnlockedCustomers(state)
+  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
 
   // Pick random customer type
   const customerType = unlockedCustomers[Math.floor(Math.random() * unlockedCustomers.length)]
@@ -585,6 +588,15 @@ export function generateCustomer(state: GameState, customNames: string[] = []): 
   const regular = state.regulars[customerName]
   const isRegular = regular && regular.visitsCount >= VISITS_TO_BECOME_REGULAR
 
+  // Pick what drink they want
+  // Regulars always want their usual, others pick randomly
+  let desiredDrink: DrinkType
+  if (isRegular && regular.favoriteDrink) {
+    desiredDrink = unlockedDrinks.find(d => d.drink === regular.favoriteDrink) || unlockedDrinks[0]
+  } else {
+    desiredDrink = unlockedDrinks[Math.floor(Math.random() * unlockedDrinks.length)]
+  }
+
   return {
     id: `customer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     customerName,
@@ -594,6 +606,8 @@ export function generateCustomer(state: GameState, customNames: string[] = []): 
     patience: customerType.patience,
     maxPatience: customerType.patience,
     arrivedAt: Date.now(),
+    desiredDrink: desiredDrink.drink,
+    desiredDrinkEmoji: desiredDrink.emoji,
     isRegular,
     preferredDrink: isRegular ? regular.favoriteDrink : undefined,
   }

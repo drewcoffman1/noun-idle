@@ -440,15 +440,31 @@ export default function Game() {
   const handleSelectDrink = useCallback((drink: DrinkType) => {
     if (!selectedCustomer) return
 
-    // Create order from customer + drink
-    const order = createOrderFromCustomer(selectedCustomer, drink, gameState)
+    // Check if they picked the RIGHT drink
+    const isCorrect = drink.drink === selectedCustomer.desiredDrink
 
-    // Remove customer from waiting list and set as current order
-    setGameState(prev => ({
-      ...prev,
-      waitingCustomers: prev.waitingCustomers.filter(c => c.id !== selectedCustomer.id),
-      currentOrder: order,
-    }))
+    if (isCorrect) {
+      // Correct! Create order from customer + drink
+      const order = createOrderFromCustomer(selectedCustomer, drink, gameState)
+
+      // Remove customer from waiting list and set as current order
+      setGameState(prev => ({
+        ...prev,
+        waitingCustomers: prev.waitingCustomers.filter(c => c.id !== selectedCustomer.id),
+        currentOrder: order,
+      }))
+    } else {
+      // Wrong drink! Customer leaves angry
+      setCustomerLeft(`${selectedCustomer.customerName} wanted ${selectedCustomer.desiredDrink}!`)
+      setTimeout(() => setCustomerLeft(null), 3000)
+
+      // Remove customer from waiting list, increment lost count
+      setGameState(prev => ({
+        ...prev,
+        waitingCustomers: prev.waitingCustomers.filter(c => c.id !== selectedCustomer.id),
+        customersLost: (prev.customersLost || 0) + 1,
+      }))
+    }
 
     setSelectedCustomer(null)
   }, [selectedCustomer, gameState])
@@ -775,35 +791,43 @@ export default function Game() {
             className="bg-silver-900 border border-silver-700 rounded-2xl p-4 max-w-sm w-full shadow-xl max-h-[80vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Customer info */}
+            {/* Customer info and their order */}
             <div className="text-center mb-4">
               <span className="text-4xl">{selectedCustomer.customerEmoji}</span>
               <h3 className="text-lg font-bold text-silver-100 mt-1">{selectedCustomer.customerName}</h3>
-              <span className="text-silver-400 text-sm">{selectedCustomer.customerType}</span>
-              {selectedCustomer.isRegular && selectedCustomer.preferredDrink && (
-                <div className="mt-2 bg-amber-500/20 border border-amber-500/40 rounded-lg px-3 py-1.5">
-                  <div className="text-amber-300 text-sm font-medium">⭐ Regular Customer</div>
-                  <div className="text-amber-400 text-xs">Their usual: {selectedCustomer.preferredDrink}</div>
-                </div>
-              )}
+
+              {/* Speech bubble with their order */}
+              <div className="mt-3 bg-white text-silver-900 rounded-2xl px-4 py-3 relative">
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white rotate-45"></div>
+                {selectedCustomer.isRegular ? (
+                  <div>
+                    <div className="font-medium">I'll have my usual, please!</div>
+                    <div className="text-xs text-silver-500 mt-1">⭐ Regular customer</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-sm text-silver-600">I'd like a...</div>
+                    <div className="font-bold text-lg">{selectedCustomer.desiredDrinkEmoji} {selectedCustomer.desiredDrink}</div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Drink options */}
-            <div className="text-silver-400 text-xs mb-2">Select a drink to make:</div>
+            <div className="text-silver-400 text-xs mb-2">
+              {selectedCustomer.isRegular
+                ? "What's their usual? Pick carefully!"
+                : "Select the correct drink:"}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {getUnlockedDrinks(gameState.totalOrdersCompleted).map((drink) => {
-                const isPreferred = selectedCustomer.isRegular && selectedCustomer.preferredDrink === drink.drink
                 const masteryTier = getMasteryTier(gameState.drinksMade[drink.drink] || 0)
 
                 return (
                   <button
                     key={drink.drink}
                     onClick={() => handleSelectDrink(drink)}
-                    className={`p-3 rounded-xl transition-all text-left
-                      ${isPreferred
-                        ? 'bg-amber-500/30 border-2 border-amber-500 hover:bg-amber-500/40'
-                        : 'bg-silver-800 border border-silver-700 hover:bg-silver-700'
-                      }`}
+                    className="p-3 rounded-xl transition-all text-left bg-silver-800 border border-silver-700 hover:bg-silver-700 hover:border-silver-500"
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{drink.emoji}</span>
@@ -813,9 +837,6 @@ export default function Game() {
                       </div>
                       <span className="text-xs">{masteryTier.emoji}</span>
                     </div>
-                    {isPreferred && (
-                      <div className="text-amber-300 text-xs mt-1">Their usual! 2x beans</div>
-                    )}
                   </button>
                 )
               })}
@@ -825,7 +846,7 @@ export default function Game() {
               onClick={() => setSelectedCustomer(null)}
               className="w-full mt-4 py-2 bg-silver-800 text-silver-400 rounded-lg text-sm"
             >
-              Cancel
+              Cancel (customer keeps waiting)
             </button>
           </div>
         </div>
