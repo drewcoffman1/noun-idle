@@ -24,6 +24,7 @@ import {
   generateOrder,
   generateCustomer,
   createOrderFromCustomer,
+  baristaServeCustomer,
   updateRegulars,
   getUpgradeCost,
   getUpgradeNounCost,
@@ -218,6 +219,7 @@ export default function Game() {
     if (!parsed.waitingCustomers) parsed.waitingCustomers = []
     if (!parsed.regulars) parsed.regulars = {}
     if (parsed.customersLost === undefined) parsed.customersLost = 0
+    if (!parsed.baristaOrders) parsed.baristaOrders = []
     // Migrate old orderQueue to waitingCustomers (clear it since format changed)
     if (parsed.orderQueue && parsed.orderQueue.length > 0) {
       parsed.waitingCustomers = []
@@ -354,41 +356,61 @@ export default function Game() {
           setTimeout(() => setCustomerLeft(null), 2000)
         }
 
-        // Baristas work on current order (unchanged logic)
-        if (updated.currentOrder && prev.baristas > 0) {
+        // Baristas work independently - they take customers and serve them
+        if (prev.baristas > 0) {
           const effectiveness = getBaristaEffectiveness(prev)
-          const baristaWork = prev.baristas * effectiveness * 0.2
-          updated.currentOrder = {
-            ...updated.currentOrder,
-            workDone: updated.currentOrder.workDone + baristaWork,
-          }
+          let baristaOrders = [...(updated.baristaOrders || [])]
+          let newWaitingCustomers = [...updated.waitingCustomers]
 
-          if (updated.currentOrder.workDone >= updated.currentOrder.workRequired) {
+          // Baristas pick up new customers if they have capacity
+          const availableBaristas = prev.baristas - baristaOrders.length
+          for (let i = 0; i < availableBaristas && newWaitingCustomers.length > 0; i++) {
+            // Take the first waiting customer (FIFO)
+            const customer = newWaitingCustomers.shift()!
+            // Barista always picks the right drink
+            const order = baristaServeCustomer(customer, prev)
+            baristaOrders.push(order)
+          }
+          updated.waitingCustomers = newWaitingCustomers
+
+          // Baristas work on their orders
+          const workPerBarista = effectiveness * 0.2  // Work per tick per barista
+          const completedOrders: Order[] = []
+
+          baristaOrders = baristaOrders.map(order => {
+            const newWorkDone = order.workDone + workPerBarista
+            if (newWorkDone >= order.workRequired) {
+              completedOrders.push({ ...order, workDone: newWorkDone })
+              return null  // Mark for removal
+            }
+            return { ...order, workDone: newWorkDone }
+          }).filter((o): o is Order => o !== null)
+
+          // Process completed orders
+          for (const order of completedOrders) {
             // Tips chance
-            let payment = updated.currentOrder.value
+            let payment = order.value
             if (prev.upgradeLevels.tippingCulture > 0 && Math.random() < prev.upgradeLevels.tippingCulture * 0.05) {
               payment = Math.floor(payment * 1.5)
             }
 
             // Track drink made for mastery
-            const drinkName = updated.currentOrder.drink
             updated.drinksMade = {
-              ...prev.drinksMade,
-              [drinkName]: (prev.drinksMade[drinkName] || 0) + 1,
+              ...updated.drinksMade,
+              [order.drink]: (updated.drinksMade[order.drink] || 0) + 1,
             }
 
             // Update regulars tracking
-            updated.regulars = updateRegulars(prev.regulars, updated.currentOrder.customerName, drinkName)
+            updated.regulars = updateRegulars(updated.regulars, order.customerName, order.drink)
 
-            updated.beans = prev.beans + payment
-            updated.lifetimeBeans = prev.lifetimeBeans + payment
-            updated.totalLifetimeBeans = prev.totalLifetimeBeans + payment
-            updated.ordersCompleted = prev.ordersCompleted + 1
-            updated.totalOrdersCompleted = prev.totalOrdersCompleted + 1
-
-            // Order complete, clear it (player must select next customer)
-            updated.currentOrder = null
+            updated.beans = updated.beans + payment
+            updated.lifetimeBeans = updated.lifetimeBeans + payment
+            updated.totalLifetimeBeans = updated.totalLifetimeBeans + payment
+            updated.ordersCompleted = updated.ordersCompleted + 1
+            updated.totalOrdersCompleted = updated.totalOrdersCompleted + 1
           }
+
+          updated.baristaOrders = baristaOrders
         }
 
         // Passive income from Coffee Empire upgrade
@@ -990,6 +1012,36 @@ export default function Game() {
           </div>
         )}
       </div>
+
+      {/* Baristas working */}
+      {gameState.baristaOrders && gameState.baristaOrders.length > 0 && (
+        <div className="mb-3">
+          <div className="text-silver-400 text-xs mb-1 flex justify-between">
+            <span>👨‍🍳 Baristas Working</span>
+            <span>{gameState.baristaOrders.length}/{gameState.baristas}</span>
+          </div>
+          <div className="flex gap-2 bg-silver-900/50 rounded-lg p-2">
+            {gameState.baristaOrders.map((order) => {
+              const progress = (order.workDone / order.workRequired) * 100
+              return (
+                <div key={order.id} className="flex-1 bg-silver-800 rounded-lg p-2 max-w-[100px]">
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-sm">{order.customerEmoji}</span>
+                    <span className="text-[10px] text-silver-400 truncate">{order.customerName}</span>
+                  </div>
+                  <div className="text-xs text-silver-300 truncate">{order.drinkEmoji} {order.drink}</div>
+                  <div className="h-1 bg-silver-700 rounded-full mt-1 overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Next unlock teaser */}
       {nextDrink && (

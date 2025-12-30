@@ -63,7 +63,8 @@ export interface GameState {
 
   // The Pipeline (new system)
   waitingCustomers: WaitingCustomer[]  // Customers in line, no drink yet
-  currentOrder: Order | null            // Order being worked on
+  currentOrder: Order | null            // YOUR order being worked on
+  baristaOrders: Order[]                // Orders baristas are working on
 
   // Legacy (for migration) - will be removed
   orderQueue?: Order[]
@@ -309,7 +310,7 @@ export const UPGRADES: Upgrade[] = [
   {
     id: 'baristas',
     name: 'Hire Barista',
-    description: 'Baristas auto-complete orders',
+    description: 'Baristas serve customers for you',
     emoji: '👨‍🍳',
     tier: 1,
     baseCost: 50,
@@ -317,7 +318,7 @@ export const UPGRADES: Upgrade[] = [
     baseNounCost: 5000,
     nounCostMultiplier: 1.2,
     maxLevel: 50,
-    getEffect: (level) => `${level} barista${level !== 1 ? 's' : ''} working`,
+    getEffect: (level) => `${level} barista${level !== 1 ? 's' : ''} (auto-serve)`,
   },
   {
     id: 'orderValue',
@@ -706,7 +707,15 @@ export function updateRegulars(
   }
 }
 
-// Legacy function for backwards compatibility (used by baristas)
+// Barista creates an order from a customer (always picks the right drink!)
+export function baristaServeCustomer(customer: WaitingCustomer, state: GameState): Order {
+  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
+  // Baristas always know the right drink
+  const drink = unlockedDrinks.find(d => d.drink === customer.desiredDrink) || unlockedDrinks[0]
+  return createOrderFromCustomer(customer, drink, state)
+}
+
+// Legacy function for backwards compatibility
 export function generateOrder(state: GameState, customNames: string[] = []): Order {
   const customer = generateCustomer(state, customNames)
   const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
@@ -725,6 +734,7 @@ export function createInitialState(): GameState {
     totalLifetimeBeans: 0,
     waitingCustomers: [],
     currentOrder: null,
+    baristaOrders: [],
     ordersCompleted: 0,
     totalOrdersCompleted: 0,
     customersLost: 0,
