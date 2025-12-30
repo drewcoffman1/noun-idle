@@ -7,9 +7,11 @@ import { sdk } from '@farcaster/miniapp-sdk'
 import {
   GameState,
   Order,
+  WaitingCustomer,
   Achievement,
   ChallengeState,
   OfflineEarnings,
+  DrinkType,
   UPGRADES,
   FRANCHISE_MILESTONES,
   EMPIRE_MILESTONES,
@@ -18,7 +20,11 @@ import {
   CUSTOMER_NAMES,
   ALL_DRINKS,
   MASTERY_TIERS,
+  VISITS_TO_BECOME_REGULAR,
   generateOrder,
+  generateCustomer,
+  createOrderFromCustomer,
+  updateRegulars,
   getUpgradeCost,
   getUpgradeNounCost,
   getUnlockedUpgrades,
@@ -52,7 +58,7 @@ import {
 } from '@/lib/game'
 import { NOUN_TOKEN_ADDRESS, BURN_ADDRESS, ERC20_ABI } from '@/lib/constants'
 
-const STORAGE_KEY = 'noun-idle-v6-save'
+const STORAGE_KEY = 'noun-idle-v7-save'
 
 export default function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState)
@@ -75,6 +81,8 @@ export default function Game() {
   const [sessionBeans, setSessionBeans] = useState(0)
   const [sessionOrders, setSessionOrders] = useState(0)
   const [offlineEarnings, setOfflineEarnings] = useState<OfflineEarnings | null>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<WaitingCustomer | null>(null)  // Customer we're picking drink for
+  const [customerLeft, setCustomerLeft] = useState<string | null>(null)  // Show when customer leaves angry
 
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null)
   const customNamesRef = useRef<string[]>([])
@@ -206,6 +214,15 @@ export default function Game() {
     if (!parsed.totalOrdersCompleted) parsed.totalOrdersCompleted = parsed.ordersCompleted || 0
     if (!parsed.unlockedAchievements) parsed.unlockedAchievements = []
     if (!parsed.drinksMade) parsed.drinksMade = {}
+    // New fields for patience/regulars system
+    if (!parsed.waitingCustomers) parsed.waitingCustomers = []
+    if (!parsed.regulars) parsed.regulars = {}
+    if (parsed.customersLost === undefined) parsed.customersLost = 0
+    // Migrate old orderQueue to waitingCustomers (clear it since format changed)
+    if (parsed.orderQueue && parsed.orderQueue.length > 0) {
+      parsed.waitingCustomers = []
+      delete parsed.orderQueue
+    }
     return parsed
   }
 
@@ -305,21 +322,39 @@ export default function Game() {
         let updated = { ...prev }
         const maxQueue = getMaxQueueSize(prev)
 
-        // Customer arrivals
+        // Customer arrivals (generate WaitingCustomer, not Order)
         const customerInterval = Math.max(1, 5 - prev.upgradeLevels.customerRate * 0.3) * 1000
-        if (now - prev.lastCustomerTime >= customerInterval && prev.orderQueue.length < maxQueue) {
-          const newOrder = generateOrder(prev, customNamesRef.current)
-          updated.orderQueue = [...prev.orderQueue, newOrder]
+        if (now - prev.lastCustomerTime >= customerInterval && prev.waitingCustomers.length < maxQueue) {
+          const newCustomer = generateCustomer(prev, customNamesRef.current)
+          updated.waitingCustomers = [...prev.waitingCustomers, newCustomer]
           updated.lastCustomerTime = now
         }
 
-        // Ensure current order
-        if (!updated.currentOrder && updated.orderQueue.length > 0) {
-          updated.currentOrder = updated.orderQueue[0]
-          updated.orderQueue = updated.orderQueue.slice(1)
+        // Tick patience for waiting customers
+        const patienceLossPerTick = 0.1  // Lose 0.1 patience per tick (100ms) = 1 per second
+        let customersWhoLeft: string[] = []
+        updated.waitingCustomers = prev.waitingCustomers
+          .map(customer => ({
+            ...customer,
+            patience: customer.patience - patienceLossPerTick,
+          }))
+          .filter(customer => {
+            if (customer.patience <= 0) {
+              customersWhoLeft.push(customer.customerName)
+              return false
+            }
+            return true
+          })
+
+        // Track customers lost
+        if (customersWhoLeft.length > 0) {
+          updated.customersLost = (prev.customersLost || 0) + customersWhoLeft.length
+          // Show notification for first customer who left
+          setCustomerLeft(customersWhoLeft[0])
+          setTimeout(() => setCustomerLeft(null), 2000)
         }
 
-        // Baristas work
+        // Baristas work on current order (unchanged logic)
         if (updated.currentOrder && prev.baristas > 0) {
           const effectiveness = getBaristaEffectiveness(prev)
           const baristaWork = prev.baristas * effectiveness * 0.2
@@ -342,18 +377,17 @@ export default function Game() {
               [drinkName]: (prev.drinksMade[drinkName] || 0) + 1,
             }
 
+            // Update regulars tracking
+            updated.regulars = updateRegulars(prev.regulars, updated.currentOrder.customerName, drinkName)
+
             updated.beans = prev.beans + payment
             updated.lifetimeBeans = prev.lifetimeBeans + payment
             updated.totalLifetimeBeans = prev.totalLifetimeBeans + payment
             updated.ordersCompleted = prev.ordersCompleted + 1
             updated.totalOrdersCompleted = prev.totalOrdersCompleted + 1
 
-            if (updated.orderQueue.length > 0) {
-              updated.currentOrder = updated.orderQueue[0]
-              updated.orderQueue = updated.orderQueue.slice(1)
-            } else {
-              updated.currentOrder = null
-            }
+            // Order complete, clear it (player must select next customer)
+            updated.currentOrder = null
           }
         }
 
@@ -396,7 +430,30 @@ export default function Game() {
     autoConnect()
   }, [isConnected, connect, connectors])
 
-  // Tap handler
+  // Handle tapping a waiting customer to start serving them
+  const handleSelectCustomer = useCallback((customer: WaitingCustomer) => {
+    if (gameState.currentOrder) return  // Already working on an order
+    setSelectedCustomer(customer)
+  }, [gameState.currentOrder])
+
+  // Handle selecting a drink for the selected customer
+  const handleSelectDrink = useCallback((drink: DrinkType) => {
+    if (!selectedCustomer) return
+
+    // Create order from customer + drink
+    const order = createOrderFromCustomer(selectedCustomer, drink, gameState)
+
+    // Remove customer from waiting list and set as current order
+    setGameState(prev => ({
+      ...prev,
+      waitingCustomers: prev.waitingCustomers.filter(c => c.id !== selectedCustomer.id),
+      currentOrder: order,
+    }))
+
+    setSelectedCustomer(null)
+  }, [selectedCustomer, gameState])
+
+  // Tap handler - work on current order
   const handleTap = useCallback(() => {
     if (!gameState.currentOrder) return
 
@@ -428,11 +485,11 @@ export default function Game() {
         setSessionBeans(b => b + payment)
         setSessionOrders(o => o + 1)
 
-        const nextOrder = prev.orderQueue.length > 0 ? prev.orderQueue[0] : null
-        const newQueue = prev.orderQueue.slice(1)
-
         // Track drink made for mastery
         const drinkName = prev.currentOrder.drink
+
+        // Update regulars tracking
+        const newRegulars = updateRegulars(prev.regulars, prev.currentOrder.customerName, drinkName)
 
         return {
           ...prev,
@@ -445,8 +502,8 @@ export default function Game() {
             ...prev.drinksMade,
             [drinkName]: (prev.drinksMade[drinkName] || 0) + 1,
           },
-          currentOrder: nextOrder,
-          orderQueue: newQueue,
+          regulars: newRegulars,
+          currentOrder: null,  // Clear order, player must select next customer
         }
       }
 
@@ -708,6 +765,72 @@ export default function Game() {
         </div>
       )}
 
+      {/* Drink Selection Modal */}
+      {selectedCustomer && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => setSelectedCustomer(null)}
+        >
+          <div
+            className="bg-silver-900 border border-silver-700 rounded-2xl p-4 max-w-sm w-full shadow-xl max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Customer info */}
+            <div className="text-center mb-4">
+              <span className="text-4xl">{selectedCustomer.customerEmoji}</span>
+              <h3 className="text-lg font-bold text-silver-100 mt-1">{selectedCustomer.customerName}</h3>
+              <span className="text-silver-400 text-sm">{selectedCustomer.customerType}</span>
+              {selectedCustomer.isRegular && selectedCustomer.preferredDrink && (
+                <div className="mt-2 bg-amber-500/20 border border-amber-500/40 rounded-lg px-3 py-1.5">
+                  <div className="text-amber-300 text-sm font-medium">⭐ Regular Customer</div>
+                  <div className="text-amber-400 text-xs">Their usual: {selectedCustomer.preferredDrink}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Drink options */}
+            <div className="text-silver-400 text-xs mb-2">Select a drink to make:</div>
+            <div className="grid grid-cols-2 gap-2">
+              {getUnlockedDrinks(gameState.totalOrdersCompleted).map((drink) => {
+                const isPreferred = selectedCustomer.isRegular && selectedCustomer.preferredDrink === drink.drink
+                const masteryTier = getMasteryTier(gameState.drinksMade[drink.drink] || 0)
+
+                return (
+                  <button
+                    key={drink.drink}
+                    onClick={() => handleSelectDrink(drink)}
+                    className={`p-3 rounded-xl transition-all text-left
+                      ${isPreferred
+                        ? 'bg-amber-500/30 border-2 border-amber-500 hover:bg-amber-500/40'
+                        : 'bg-silver-800 border border-silver-700 hover:bg-silver-700'
+                      }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{drink.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-silver-100 text-sm truncate">{drink.drink}</div>
+                        <div className="text-silver-400 text-xs">+{drink.baseValue} beans</div>
+                      </div>
+                      <span className="text-xs">{masteryTier.emoji}</span>
+                    </div>
+                    {isPreferred && (
+                      <div className="text-amber-300 text-xs mt-1">Their usual! 2x beans</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            <button
+              onClick={() => setSelectedCustomer(null)}
+              className="w-full mt-4 py-2 bg-silver-800 text-silver-400 rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Achievement popup */}
       {newAchievement && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2 rounded-xl shadow-lg animate-bounce">
@@ -782,30 +905,69 @@ export default function Game() {
         )}
       </div>
 
-      {/* Order Queue */}
+      {/* Customer Left notification */}
+      {customerLeft && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500 text-white px-4 py-2 rounded-xl shadow-lg animate-bounce">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">😤</span>
+            <span className="font-medium">{customerLeft} left!</span>
+          </div>
+        </div>
+      )}
+
+      {/* Waiting Customers Queue (with patience bars) */}
       <div className="mb-3">
         <div className="text-silver-400 text-xs mb-1 flex justify-between">
-          <span>Queue</span>
-          <span>{gameState.orderQueue.length}/{maxQueue}</span>
+          <span>Waiting Customers</span>
+          <span>{gameState.waitingCustomers.length}/{maxQueue}</span>
         </div>
-        <div className="flex gap-1 h-8 bg-silver-900/50 rounded-lg p-1 overflow-hidden">
-          {gameState.orderQueue.length === 0 ? (
+        <div className="flex gap-1.5 min-h-[52px] bg-silver-900/50 rounded-lg p-1.5 overflow-x-auto">
+          {gameState.waitingCustomers.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-silver-600 text-xs">
               Waiting for customers...
             </div>
           ) : (
-            gameState.orderQueue.slice(0, 12).map((order) => (
-              <div
-                key={order.id}
-                className={`flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-sm
-                  ${order.isSpecial ? 'bg-amber-500/30 border border-amber-500/50' : 'bg-silver-800'}`}
-                title={`${order.customerName} wants ${order.drink}`}
-              >
-                {order.customerEmoji}
-              </div>
-            ))
+            gameState.waitingCustomers.map((customer) => {
+              const patiencePercent = (customer.patience / customer.maxPatience) * 100
+              const isUrgent = patiencePercent < 30
+              const regular = gameState.regulars[customer.customerName]
+              const isKnownRegular = regular && regular.visitsCount >= VISITS_TO_BECOME_REGULAR
+
+              return (
+                <button
+                  key={customer.id}
+                  onClick={() => handleSelectCustomer(customer)}
+                  disabled={!!gameState.currentOrder}
+                  className={`flex-shrink-0 flex flex-col items-center p-1 rounded-lg transition-all
+                    ${gameState.currentOrder ? 'opacity-50 cursor-not-allowed' : 'hover:bg-silver-700/50 cursor-pointer'}
+                    ${isKnownRegular ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-silver-800'}
+                    ${isUrgent ? 'animate-pulse' : ''}`}
+                  title={`${customer.customerName} (${customer.customerType})${isKnownRegular ? ' ⭐ Regular' : ''}`}
+                >
+                  <span className="text-lg">{customer.customerEmoji}</span>
+                  <span className="text-[9px] text-silver-400 truncate w-10 text-center">
+                    {customer.customerName}
+                  </span>
+                  {/* Patience bar */}
+                  <div className="w-10 h-1 bg-silver-700 rounded-full mt-0.5 overflow-hidden">
+                    <div
+                      className={`h-full transition-all ${
+                        isUrgent ? 'bg-red-500' : patiencePercent < 60 ? 'bg-yellow-500' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${patiencePercent}%` }}
+                    />
+                  </div>
+                  {isKnownRegular && <span className="text-[8px] text-amber-400">⭐</span>}
+                </button>
+              )
+            })
           )}
         </div>
+        {gameState.currentOrder && gameState.waitingCustomers.length > 0 && (
+          <div className="text-center text-silver-500 text-[10px] mt-1">
+            Finish current order to serve next customer
+          </div>
+        )}
       </div>
 
       {/* Next unlock teaser */}
@@ -816,7 +978,7 @@ export default function Game() {
         </div>
       )}
 
-      {/* Current Order */}
+      {/* Current Order / Select Customer */}
       <div className="flex-1 flex flex-col items-center justify-center mb-3">
         {currentOrder ? (
           <div className="w-full max-w-xs">
@@ -834,6 +996,12 @@ export default function Game() {
               >
                 {currentOrder.drinkEmoji} {currentOrder.drink}
               </button>
+              {/* Show regular status */}
+              {currentOrder.wasRegular && (
+                <div className={`text-xs mt-1 ${currentOrder.gotPreferred ? 'text-green-400' : 'text-red-400'}`}>
+                  {currentOrder.gotPreferred ? '⭐ Their usual! 2x beans' : '😕 Not their usual...'}
+                </div>
+              )}
             </div>
 
             <div className="mb-3">
@@ -842,14 +1010,16 @@ export default function Game() {
                   className={`h-full transition-all duration-100 ${
                     currentOrder.isSpecial
                       ? 'bg-gradient-to-r from-amber-400 to-orange-400'
-                      : 'bg-gradient-to-r from-silver-400 to-silver-300'
+                      : currentOrder.gotPreferred
+                        ? 'bg-gradient-to-r from-green-400 to-emerald-400'
+                        : 'bg-gradient-to-r from-silver-400 to-silver-300'
                   }`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
               <div className="flex justify-between text-xs text-silver-500 mt-1">
                 <span>{Math.floor(currentOrder.workDone)}/{currentOrder.workRequired}</span>
-                <span className={currentOrder.isSpecial ? 'text-amber-300 font-medium' : 'text-silver-300'}>
+                <span className={currentOrder.gotPreferred ? 'text-green-400 font-medium' : currentOrder.isSpecial ? 'text-amber-300 font-medium' : 'text-silver-300'}>
                   +{currentOrder.value} beans
                 </span>
               </div>
@@ -871,6 +1041,14 @@ export default function Game() {
             <div className="text-center text-silver-500 text-xs mt-1">
               +{gameState.tapPower} per tap
               {gameState.baristas > 0 && ` • ${gameState.baristas} barista${gameState.baristas !== 1 ? 's' : ''} helping`}
+            </div>
+          </div>
+        ) : gameState.waitingCustomers.length > 0 ? (
+          <div className="text-center text-silver-400">
+            <div className="text-4xl mb-2">👆</div>
+            <div className="text-sm">Tap a customer above to serve them!</div>
+            <div className="text-xs text-silver-500 mt-1">
+              Choose wisely - regulars want their usual drink
             </div>
           </div>
         ) : (

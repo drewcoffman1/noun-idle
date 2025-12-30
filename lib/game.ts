@@ -5,6 +5,21 @@
 // Unlockable: Drinks, Customers, Upgrades, Achievements
 // ============================================
 
+// A customer waiting in line (no drink assigned yet)
+export interface WaitingCustomer {
+  id: string
+  customerName: string
+  customerEmoji: string
+  customerType: string  // 'Regular', 'Student', etc.
+  valueMultiplier: number
+  patience: number      // Current patience (decreases over time)
+  maxPatience: number   // Starting patience
+  arrivedAt: number     // Timestamp
+  isRegular?: boolean   // Is this a returning regular?
+  preferredDrink?: string  // If regular, what's their usual?
+}
+
+// An order being worked on (drink has been selected)
 export interface Order {
   id: string
   customerName: string
@@ -14,7 +29,18 @@ export interface Order {
   value: number
   workRequired: number
   workDone: number
-  isSpecial?: boolean  // VIP/special customers use more beans
+  isSpecial?: boolean
+  wasRegular?: boolean      // Was this customer a regular?
+  gotPreferred?: boolean    // Did they get their preferred drink?
+}
+
+// Track regular customers
+export interface Regular {
+  name: string
+  visitsCount: number
+  favoriteDrink: string      // The drink they order most
+  drinkCounts: Record<string, number>  // Track all drinks they've had
+  lastVisit: number
 }
 
 export interface Achievement {
@@ -33,16 +59,23 @@ export interface GameState {
   lifetimeBeans: number
   totalLifetimeBeans: number  // Never resets, used for unlocks
 
-  // The Pipeline
-  orderQueue: Order[]
-  currentOrder: Order | null
+  // The Pipeline (new system)
+  waitingCustomers: WaitingCustomer[]  // Customers in line, no drink yet
+  currentOrder: Order | null            // Order being worked on
+
+  // Legacy (for migration) - will be removed
+  orderQueue?: Order[]
 
   // Stats
   ordersCompleted: number
   totalOrdersCompleted: number  // Never resets
+  customersLost: number  // Customers who left due to impatience
 
   // Recipe Mastery - tracks how many of each drink made
   drinksMade: Record<string, number>
+
+  // Regulars - customers who keep coming back
+  regulars: Record<string, Regular>
 
   // Upgrade levels (for cost calculation)
   upgradeLevels: {
@@ -196,22 +229,30 @@ export interface CustomerType {
   name: string
   emoji: string
   valueMultiplier: number
+  patience: number  // Base patience in seconds
   unlocksAt: { type: 'orders' | 'franchises' | 'empires', count: number }
 }
 
 export const ALL_CUSTOMERS: CustomerType[] = [
-  // Starting customers
-  { name: 'Regular', emoji: '🧑', valueMultiplier: 1, unlocksAt: { type: 'orders', count: 0 } },
-  { name: 'Student', emoji: '👩‍🎓', valueMultiplier: 0.8, unlocksAt: { type: 'orders', count: 0 } },
-  { name: 'Worker', emoji: '👨‍💼', valueMultiplier: 1.1, unlocksAt: { type: 'orders', count: 0 } },
+  // Starting customers - patience varies by type
+  { name: 'Regular', emoji: '🧑', valueMultiplier: 1, patience: 30, unlocksAt: { type: 'orders', count: 0 } },
+  { name: 'Student', emoji: '👩‍🎓', valueMultiplier: 0.8, patience: 45, unlocksAt: { type: 'orders', count: 0 } },  // Patient, less money
+  { name: 'Worker', emoji: '👨‍💼', valueMultiplier: 1.1, patience: 20, unlocksAt: { type: 'orders', count: 0 } },  // Rushed, more money
   // Unlock with progress
-  { name: 'Foodie', emoji: '🧔', valueMultiplier: 1.3, unlocksAt: { type: 'orders', count: 200 } },
-  { name: 'Influencer', emoji: '💁‍♀️', valueMultiplier: 1.5, unlocksAt: { type: 'orders', count: 500 } },
-  { name: 'Executive', emoji: '👩‍💼', valueMultiplier: 2.0, unlocksAt: { type: 'franchises', count: 1 } },
-  { name: 'Celebrity', emoji: '🤩', valueMultiplier: 3.0, unlocksAt: { type: 'franchises', count: 3 } },
-  { name: 'Royalty', emoji: '🤴', valueMultiplier: 5.0, unlocksAt: { type: 'empires', count: 1 } },
-  { name: 'Billionaire', emoji: '🧐', valueMultiplier: 10.0, unlocksAt: { type: 'empires', count: 3 } },
+  { name: 'Foodie', emoji: '🧔', valueMultiplier: 1.3, patience: 40, unlocksAt: { type: 'orders', count: 200 } },
+  { name: 'Influencer', emoji: '💁‍♀️', valueMultiplier: 1.5, patience: 25, unlocksAt: { type: 'orders', count: 500 } },  // Impatient
+  { name: 'Executive', emoji: '👩‍💼', valueMultiplier: 2.0, patience: 15, unlocksAt: { type: 'franchises', count: 1 } },  // Very rushed
+  { name: 'Celebrity', emoji: '🤩', valueMultiplier: 3.0, patience: 20, unlocksAt: { type: 'franchises', count: 3 } },
+  { name: 'Royalty', emoji: '🤴', valueMultiplier: 5.0, patience: 35, unlocksAt: { type: 'empires', count: 1 } },  // Expects good service, patient
+  { name: 'Billionaire', emoji: '🧐', valueMultiplier: 10.0, patience: 12, unlocksAt: { type: 'empires', count: 3 } },  // Time is money
 ]
+
+// How many visits before someone becomes a Regular
+export const VISITS_TO_BECOME_REGULAR = 5
+// Bonus multiplier for serving a regular their preferred drink
+export const REGULAR_PREFERRED_BONUS = 2.0
+// Penalty multiplier for giving a regular the wrong drink
+export const REGULAR_WRONG_PENALTY = 0.5
 
 export const CUSTOMER_NAMES = [
   'Alex', 'Jordan', 'Sam', 'Riley', 'Casey', 'Morgan', 'Taylor', 'Quinn',
@@ -526,42 +567,137 @@ export function checkNewAchievements(state: GameState): Achievement[] {
 }
 
 // ============================================
-// ORDER GENERATION
+// CUSTOMER GENERATION (New System)
 // ============================================
 
-export function generateOrder(state: GameState, customNames: string[] = []): Order {
-  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
+// Generate a customer who arrives and waits (no drink yet)
+export function generateCustomer(state: GameState, customNames: string[] = []): WaitingCustomer {
   const unlockedCustomers = getUnlockedCustomers(state)
 
-  // Pick random drink from unlocked
-  const drinkType = unlockedDrinks[Math.floor(Math.random() * unlockedDrinks.length)]
-
-  // Pick random customer type (weighted towards basic)
+  // Pick random customer type
   const customerType = unlockedCustomers[Math.floor(Math.random() * unlockedCustomers.length)]
 
   // Pick random name
   const allNames = [...CUSTOMER_NAMES, ...customNames]
   const customerName = allNames[Math.floor(Math.random() * allNames.length)]
 
-  // Calculate multipliers including mastery bonus for this specific drink
-  const achievementBonus = getAchievementBonus(state, 'value')
-  const masteryBonus = getMasteryBonus(state, drinkType.drink)
-  const valueMultiplier = (1 + (state.upgradeLevels.orderValue * 0.2) + state.franchiseBonus + state.empireBonus + state.dynastyBonus + achievementBonus + masteryBonus) * customerType.valueMultiplier
-  const workReduction = 1 - (state.upgradeLevels.serviceSpeed * 0.05)
-
-  const isSpecial = customerType.valueMultiplier > 1.5
+  // Check if this person is a known regular
+  const regular = state.regulars[customerName]
+  const isRegular = regular && regular.visitsCount >= VISITS_TO_BECOME_REGULAR
 
   return {
-    id: `order-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: `customer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     customerName,
     customerEmoji: customerType.emoji,
-    drink: drinkType.drink,
-    drinkEmoji: drinkType.emoji,
-    value: Math.floor(drinkType.baseValue * valueMultiplier),
-    workRequired: Math.max(5, Math.floor(drinkType.baseWork * workReduction)),
+    customerType: customerType.name,
+    valueMultiplier: customerType.valueMultiplier,
+    patience: customerType.patience,
+    maxPatience: customerType.patience,
+    arrivedAt: Date.now(),
+    isRegular,
+    preferredDrink: isRegular ? regular.favoriteDrink : undefined,
+  }
+}
+
+// Create an order from a waiting customer after drink is selected
+export function createOrderFromCustomer(
+  customer: WaitingCustomer,
+  drink: DrinkType,
+  state: GameState
+): Order {
+  // Calculate value multipliers
+  const achievementBonus = getAchievementBonus(state, 'value')
+  const masteryBonus = getMasteryBonus(state, drink.drink)
+  const baseMultiplier = 1 + (state.upgradeLevels.orderValue * 0.2) +
+    state.franchiseBonus + state.empireBonus + state.dynastyBonus + achievementBonus + masteryBonus
+
+  // Check if this is a regular getting their preferred drink
+  const gotPreferred = customer.isRegular && customer.preferredDrink === drink.drink
+  const gotWrong = customer.isRegular && customer.preferredDrink !== drink.drink
+
+  // Apply regular bonus/penalty
+  let regularMultiplier = 1
+  if (gotPreferred) {
+    regularMultiplier = REGULAR_PREFERRED_BONUS
+  } else if (gotWrong) {
+    regularMultiplier = REGULAR_WRONG_PENALTY
+  }
+
+  const valueMultiplier = baseMultiplier * customer.valueMultiplier * regularMultiplier
+  const workReduction = 1 - (state.upgradeLevels.serviceSpeed * 0.05)
+
+  const isSpecial = customer.valueMultiplier > 1.5
+
+  return {
+    id: customer.id,
+    customerName: customer.customerName,
+    customerEmoji: customer.customerEmoji,
+    drink: drink.drink,
+    drinkEmoji: drink.emoji,
+    value: Math.floor(drink.baseValue * valueMultiplier),
+    workRequired: Math.max(5, Math.floor(drink.baseWork * workReduction)),
     workDone: 0,
     isSpecial,
+    wasRegular: customer.isRegular,
+    gotPreferred,
   }
+}
+
+// Update regulars tracking after serving a customer
+export function updateRegulars(
+  regulars: Record<string, Regular>,
+  customerName: string,
+  drinkName: string
+): Record<string, Regular> {
+  const existing = regulars[customerName]
+
+  if (existing) {
+    const newDrinkCounts = {
+      ...existing.drinkCounts,
+      [drinkName]: (existing.drinkCounts[drinkName] || 0) + 1,
+    }
+
+    // Find the most ordered drink
+    let favoriteDrink = drinkName
+    let maxCount = 0
+    for (const [drink, count] of Object.entries(newDrinkCounts)) {
+      if (count > maxCount) {
+        maxCount = count
+        favoriteDrink = drink
+      }
+    }
+
+    return {
+      ...regulars,
+      [customerName]: {
+        ...existing,
+        visitsCount: existing.visitsCount + 1,
+        favoriteDrink,
+        drinkCounts: newDrinkCounts,
+        lastVisit: Date.now(),
+      },
+    }
+  } else {
+    // First time customer
+    return {
+      ...regulars,
+      [customerName]: {
+        name: customerName,
+        visitsCount: 1,
+        favoriteDrink: drinkName,
+        drinkCounts: { [drinkName]: 1 },
+        lastVisit: Date.now(),
+      },
+    }
+  }
+}
+
+// Legacy function for backwards compatibility (used by baristas)
+export function generateOrder(state: GameState, customNames: string[] = []): Order {
+  const customer = generateCustomer(state, customNames)
+  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
+  const drink = unlockedDrinks[Math.floor(Math.random() * unlockedDrinks.length)]
+  return createOrderFromCustomer(customer, drink, state)
 }
 
 // ============================================
@@ -573,11 +709,13 @@ export function createInitialState(): GameState {
     beans: 0,
     lifetimeBeans: 0,
     totalLifetimeBeans: 0,
-    orderQueue: [],
+    waitingCustomers: [],
     currentOrder: null,
     ordersCompleted: 0,
     totalOrdersCompleted: 0,
+    customersLost: 0,
     drinksMade: {},
+    regulars: {},
     tapPower: 1,
     baristas: 0,
     upgradeLevels: {
