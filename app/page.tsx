@@ -469,9 +469,10 @@ export default function Game() {
 
         // AUTO-BREW: Your current order progresses automatically (tap = bonus speed)
         if (updated.currentOrder) {
-          // Base auto-brew speed: 0.5 work per tick (5 per second)
-          // Auto-Brew upgrade increases this
-          const autoBrewSpeed = 0.5 + (prev.upgradeLevels.autoBrew || 0) * 0.3
+          // No auto-brew without upgrade - you must tap!
+          // Coffee Training upgrade enables and increases auto-brew
+          const autoBrewLevel = prev.upgradeLevels.autoBrew || 0
+          const autoBrewSpeed = autoBrewLevel > 0 ? (autoBrewLevel * 0.4) : 0
           const newWorkDone = updated.currentOrder.workDone + autoBrewSpeed
 
           if (newWorkDone >= updated.currentOrder.workRequired) {
@@ -1374,9 +1375,9 @@ export default function Game() {
             <button
               onClick={handleTap}
               className="relative w-full py-6 rounded-2xl bg-gradient-to-br from-silver-300 to-silver-500
-                         text-silver-900 font-bold text-xl active:scale-95 transition-transform shadow-lg"
+                         text-silver-900 font-bold text-xl active:scale-95 transition-transform shadow-lg brew-button"
             >
-              ⚡ Boost!
+              {gameState.upgradeLevels.autoBrew > 0 ? '⚡ Boost!' : '☕ Make Drink'}
               {showPayment && (
                 <span className="absolute top-1 right-3 text-green-400 font-bold animate-bounce text-sm">
                   +{showPayment.amount}
@@ -1385,8 +1386,11 @@ export default function Game() {
             </button>
 
             <div className="text-center text-silver-500 text-xs mt-1">
-              <span className="text-silver-400">Auto-brewing</span>
-              {gameState.tapPower > 1 && <span> • Tap +{gameState.tapPower} bonus</span>}
+              {gameState.upgradeLevels.autoBrew > 0 ? (
+                <span className="text-silver-400">Auto-brewing • Tap for bonus</span>
+              ) : (
+                <span className="text-silver-400">Tap to make drinks!</span>
+              )}
               {gameState.baristas > 0 && <span> • {gameState.baristas} barista{gameState.baristas !== 1 ? 's' : ''}</span>}
             </div>
           </div>
