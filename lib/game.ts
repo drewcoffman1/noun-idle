@@ -19,6 +19,7 @@ export interface WaitingCustomer {
   desiredDrinkEmoji: string
   isRegular?: boolean   // Is this a returning regular?
   preferredDrink?: string  // If regular, what's their usual? (for hint)
+  isNoun?: boolean      // ⌐◨-◨ Special Noun customer!
 }
 
 // An order being worked on (drink has been selected)
@@ -34,6 +35,7 @@ export interface Order {
   isSpecial?: boolean
   wasRegular?: boolean      // Was this customer a regular?
   gotPreferred?: boolean    // Did they get their preferred drink?
+  isNoun?: boolean          // ⌐◨-◨ Was this a Noun customer?
 }
 
 // Track regular customers
@@ -53,6 +55,8 @@ export interface Achievement {
   requirement: (state: GameState) => boolean
   bonus: number  // Permanent multiplier bonus
   bonusType: 'value' | 'speed' | 'work'
+  secret?: boolean  // Hidden until unlocked
+  hint?: string     // Vague hint for secret achievements
 }
 
 export interface GameState {
@@ -121,6 +125,9 @@ export interface GameState {
   // Timestamps
   lastUpdate: number
   lastCustomerTime: number
+
+  // ⌐◨-◨ Nouns Easter Eggs
+  nounsServed: number  // Track how many Noun customers served
 }
 
 // ============================================
@@ -213,10 +220,33 @@ export const ALL_DRINKS: DrinkType[] = [
     unlocksAt: 500,
     description: 'Chilled espresso + diet coke + ice. Served iced'
   },
+  // ⌐◨-◨ SECRET NOUNS DRINK - unlocks after serving a Noun customer
+  {
+    drink: 'The Nounish',
+    emoji: '⌐◨-◨',
+    baseValue: 42,  // 42 - answer to everything
+    baseWork: 20,
+    unlocksAt: 99999,  // Hidden by default, special unlock
+    origin: 'Ethereum | On-chain | Daily Auction',
+    notes: 'Red glasses, pixel perfect, community vibes',
+    description: 'A legendary brew for true Nouns believers. One per day, forever.'
+  },
 ]
 
-export function getUnlockedDrinks(totalOrders: number): DrinkType[] {
-  return ALL_DRINKS.filter(d => d.unlocksAt <= totalOrders)
+// Check if The Nounish is unlocked (served a Noun customer)
+export function isNounishUnlocked(state: GameState): boolean {
+  return state.nounsServed > 0
+}
+
+// Get unlocked drinks - includes secret Nounish if unlocked
+export function getUnlockedDrinks(totalOrders: number, state?: GameState): DrinkType[] {
+  return ALL_DRINKS.filter(d => {
+    // Special case for The Nounish - needs state check
+    if (d.drink === 'The Nounish') {
+      return state ? isNounishUnlocked(state) : false
+    }
+    return d.unlocksAt <= totalOrders
+  })
 }
 
 export function getNextDrinkUnlock(totalOrders: number): DrinkType | null {
@@ -250,6 +280,34 @@ export const ALL_CUSTOMERS: CustomerType[] = [
   { name: 'Royalty', emoji: '🤴', valueMultiplier: 5.0, patience: 35, unlocksAt: { type: 'empires', count: 1 } },  // Expects good service, patient
   { name: 'Billionaire', emoji: '🧐', valueMultiplier: 10.0, patience: 12, unlocksAt: { type: 'empires', count: 3 } },  // Time is money
 ]
+
+// ⌐◨-◨ NOUNS DAO EASTER EGGS ⌐◨-◨
+// Special rare customer type - appears randomly with low chance
+export const NOUN_CUSTOMER: CustomerType = {
+  name: 'Noun',
+  emoji: '⌐◨-◨',  // The iconic Nouns glasses!
+  valueMultiplier: 10.0,  // Very generous tipper
+  patience: 60,  // Nouns are patient, they think long-term
+  unlocksAt: { type: 'orders', count: 0 },  // Always available but rare
+}
+
+// Nouns community / founder names as easter egg customers
+export const NOUNS_NAMES = [
+  '4156',        // Nouns founder
+  'punk4156',
+  'gremplin',    // Artist
+  'Noun 1',
+  'Noun 40',
+  'Noun 100',
+  'seneca',      // Nouns builder
+  'toady',       // Nouns builder
+  'noun22',
+  'nounish',
+  '⌐◨-◨',
+]
+
+// Chance for a Noun customer to appear (1 in 50)
+export const NOUN_CUSTOMER_CHANCE = 0.02
 
 // How many visits before someone becomes a Regular
 export const VISITS_TO_BECOME_REGULAR = 5
@@ -561,6 +619,23 @@ export const ACHIEVEMENTS: Achievement[] = [
   // Speed achievements
   { id: 'baristas_10', name: 'Full Staff', description: 'Hire 10 baristas', emoji: '👨‍🍳', requirement: (s) => s.upgradeLevels.baristas >= 10, bonus: 0.1, bonusType: 'speed' },
   { id: 'baristas_50', name: 'Coffee Army', description: 'Hire 50 baristas', emoji: '⚔️', requirement: (s) => s.upgradeLevels.baristas >= 50, bonus: 0.25, bonusType: 'speed' },
+
+  // SECRET achievements - hidden until unlocked
+  { id: 'secret_patience', name: 'Zen Master', description: 'Have 10 customers leave due to impatience', emoji: '🧘', requirement: (s) => s.customersLost >= 10, bonus: 0.1, bonusType: 'value', secret: true, hint: 'Sometimes patience runs out...' },
+  { id: 'secret_perfect', name: 'Perfect Service', description: 'Serve 50 orders without losing a customer', emoji: '✨', requirement: (s) => s.ordersCompleted >= 50 && s.customersLost === 0, bonus: 0.2, bonusType: 'value', secret: true, hint: 'Flawless from the start' },
+  { id: 'secret_regular_master', name: 'Everybody Knows Your Name', description: 'Have 10 regular customers', emoji: '🍻', requirement: (s) => Object.values(s.regulars).filter(r => r.visitsCount >= 5).length >= 10, bonus: 0.15, bonusType: 'value', secret: true, hint: 'Build your community' },
+  { id: 'secret_mastery', name: 'Jack of All Trades', description: 'Reach Apprentice mastery on all drinks', emoji: '🎓', requirement: (s) => {
+    const unlockedDrinks = ALL_DRINKS.filter(d => d.unlocksAt <= s.totalOrdersCompleted)
+    return unlockedDrinks.length > 0 && unlockedDrinks.every(d => (s.drinksMade[d.drink] || 0) >= 50)
+  }, bonus: 0.25, bonusType: 'value', secret: true, hint: 'Master the basics of every recipe' },
+  { id: 'secret_speedster', name: 'Caffeine Rush', description: 'Complete 10 orders in under a minute', emoji: '⚡', requirement: (s) => s.upgradeLevels.tapPower >= 20 && s.upgradeLevels.serviceSpeed >= 10, bonus: 0.15, bonusType: 'speed', secret: true, hint: 'Speed is everything' },
+  { id: 'secret_millionaire', name: 'Bean Counter', description: 'Have 1M beans at once', emoji: '🏧', requirement: (s) => s.beans >= 1000000, bonus: 0.3, bonusType: 'value', secret: true, hint: 'Hoard your wealth' },
+
+  // ⌐◨-◨ NOUNS DAO SECRET ACHIEVEMENTS
+  { id: 'nouns_first', name: 'First Noun', description: 'Serve your first Noun customer', emoji: '⌐◨-◨', requirement: (s) => s.nounsServed >= 1, bonus: 0.42, bonusType: 'value', secret: true, hint: 'One Noun, every day, forever...' },
+  { id: 'nouns_10', name: 'Nounish Cafe', description: 'Serve 10 Noun customers', emoji: '🟥', requirement: (s) => s.nounsServed >= 10, bonus: 0.69, bonusType: 'value', secret: true, hint: 'The red glasses keep coming back' },
+  { id: 'nouns_42', name: 'The Answer', description: 'Serve 42 Noun customers', emoji: '🌌', requirement: (s) => s.nounsServed >= 42, bonus: 1.0, bonusType: 'value', secret: true, hint: 'What is the answer to life, the universe, and everything?' },
+  { id: 'nouns_nounish', name: 'True Believer', description: 'Make 100 Nounish drinks', emoji: '☕', requirement: (s) => (s.drinksMade['The Nounish'] || 0) >= 100, bonus: 0.5, bonusType: 'value', secret: true, hint: 'The secret menu item...' },
 ]
 
 export function getAchievementBonus(state: GameState, bonusType: 'value' | 'speed' | 'work'): number {
@@ -590,14 +665,20 @@ export function checkNewAchievements(state: GameState): Achievement[] {
 // Generate a customer who arrives and waits
 export function generateCustomer(state: GameState, customNames: string[] = []): WaitingCustomer {
   const unlockedCustomers = getUnlockedCustomers(state)
-  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted)
+  const unlockedDrinks = getUnlockedDrinks(state.totalOrdersCompleted, state)
 
-  // Pick random customer type
-  const customerType = unlockedCustomers[Math.floor(Math.random() * unlockedCustomers.length)]
+  // ⌐◨-◨ NOUNS EASTER EGG: Small chance for a Noun customer!
+  const isNounCustomer = Math.random() < NOUN_CUSTOMER_CHANCE
 
-  // Pick random name
-  const allNames = [...CUSTOMER_NAMES, ...customNames]
-  const customerName = allNames[Math.floor(Math.random() * allNames.length)]
+  // Pick customer type (Noun or regular)
+  const customerType = isNounCustomer ? NOUN_CUSTOMER : unlockedCustomers[Math.floor(Math.random() * unlockedCustomers.length)]
+
+  // Pick random name (include Nouns names as easter eggs)
+  const allNames = [...CUSTOMER_NAMES, ...customNames, ...NOUNS_NAMES]
+  // If it's a Noun customer, pick from Nouns names
+  const customerName = isNounCustomer
+    ? NOUNS_NAMES[Math.floor(Math.random() * NOUNS_NAMES.length)]
+    : allNames[Math.floor(Math.random() * allNames.length)]
 
   // Check if this person is a known regular
   const regular = state.regulars[customerName]
@@ -629,6 +710,7 @@ export function generateCustomer(state: GameState, customNames: string[] = []): 
     desiredDrinkEmoji: desiredDrink.emoji,
     isRegular,
     preferredDrink: isRegular ? regular.favoriteDrink : undefined,
+    isNoun: isNounCustomer,  // ⌐◨-◨
   }
 }
 
@@ -673,6 +755,7 @@ export function createOrderFromCustomer(
     isSpecial,
     wasRegular: customer.isRegular,
     gotPreferred,
+    isNoun: customer.isNoun,  // ⌐◨-◨
   }
 }
 
@@ -783,6 +866,7 @@ export function createInitialState(): GameState {
     unlockedAchievements: [],
     lastUpdate: Date.now(),
     lastCustomerTime: Date.now(),
+    nounsServed: 0,  // ⌐◨-◨
   }
 }
 
@@ -799,6 +883,7 @@ export function resetForFranchise(state: GameState, bonusToAdd: number): GameSta
     dynasties: state.dynasties,
     dynastyBonus: state.dynastyBonus,
     unlockedAchievements: state.unlockedAchievements,
+    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
   }
 }
 
@@ -815,6 +900,7 @@ export function resetForEmpire(state: GameState, bonusToAdd: number): GameState 
     dynasties: state.dynasties,
     dynastyBonus: state.dynastyBonus,
     unlockedAchievements: state.unlockedAchievements,
+    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
   }
 }
 
@@ -831,6 +917,7 @@ export function resetForDynasty(state: GameState, bonusToAdd: number): GameState
     dynasties: state.dynasties + 1,
     dynastyBonus: state.dynastyBonus + bonusToAdd,
     unlockedAchievements: state.unlockedAchievements,
+    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
   }
 }
 

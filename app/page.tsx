@@ -19,8 +19,10 @@ import {
   ACHIEVEMENTS,
   CUSTOMER_NAMES,
   ALL_DRINKS,
+  ALL_CUSTOMERS,
   MASTERY_TIERS,
   VISITS_TO_BECOME_REGULAR,
+  isNounishUnlocked,
   generateOrder,
   generateCustomer,
   createOrderFromCustomer,
@@ -84,8 +86,30 @@ export default function Game() {
   const [offlineEarnings, setOfflineEarnings] = useState<OfflineEarnings | null>(null)
   const [selectedCustomer, setSelectedCustomer] = useState<WaitingCustomer | null>(null)  // Customer we're picking drink for
   const [customerLeft, setCustomerLeft] = useState<string | null>(null)  // Show when customer leaves angry
+  const [screenShake, setScreenShake] = useState(false)  // Shake on wrong drink
+  const [showConfetti, setShowConfetti] = useState(false)  // Celebrate on order complete
 
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Haptic feedback helper
+  const haptic = useCallback((type: 'light' | 'medium' | 'heavy' | 'error') => {
+    // Try Farcaster SDK haptics first
+    try {
+      if (sdk && 'haptics' in sdk) {
+        const haptics = (sdk as { haptics?: { impactOccurred?: (style: string) => void, notificationOccurred?: (type: string) => void } }).haptics
+        if (type === 'error' && haptics?.notificationOccurred) {
+          haptics.notificationOccurred('error')
+        } else if (haptics?.impactOccurred) {
+          haptics.impactOccurred(type)
+        }
+      }
+    } catch {}
+    // Fallback to Web Vibration API
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      const durations = { light: 10, medium: 20, heavy: 40, error: [50, 50, 50] }
+      navigator.vibrate(durations[type])
+    }
+  }, [])
   const customNamesRef = useRef<string[]>([])
   const lastCloudSaveRef = useRef<string>('')
 
@@ -226,6 +250,8 @@ export default function Game() {
       parsed.waitingCustomers = []
       delete parsed.orderQueue
     }
+    // ⌐◨-◨ Nouns easter egg migration
+    if (parsed.nounsServed === undefined) parsed.nounsServed = 0
     return parsed
   }
 
@@ -410,6 +436,11 @@ export default function Game() {
             updated.totalLifetimeBeans = updated.totalLifetimeBeans + payment
             updated.ordersCompleted = updated.ordersCompleted + 1
             updated.totalOrdersCompleted = updated.totalOrdersCompleted + 1
+
+            // ⌐◨-◨ Track Noun customers served by baristas too
+            if (order.isNoun) {
+              updated.nounsServed = (updated.nounsServed || 0) + 1
+            }
           }
 
           updated.baristaOrders = baristaOrders
@@ -468,7 +499,10 @@ export default function Game() {
     const isCorrect = drink.drink === selectedCustomer.desiredDrink
 
     if (isCorrect) {
-      // Correct! Create order from customer + drink
+      // Correct! Haptic feedback
+      haptic('medium')
+
+      // Create order from customer + drink
       const order = createOrderFromCustomer(selectedCustomer, drink, gameState)
 
       // Remove customer from waiting list and set as current order
@@ -478,7 +512,11 @@ export default function Game() {
         currentOrder: order,
       }))
     } else {
-      // Wrong drink! Customer leaves angry
+      // Wrong drink! Screen shake + error haptic
+      haptic('error')
+      setScreenShake(true)
+      setTimeout(() => setScreenShake(false), 500)
+
       setCustomerLeft(`${selectedCustomer.customerName} wanted ${selectedCustomer.desiredDrink}!`)
       setTimeout(() => setCustomerLeft(null), 3000)
 
@@ -491,14 +529,27 @@ export default function Game() {
     }
 
     setSelectedCustomer(null)
-  }, [selectedCustomer, gameState])
+  }, [selectedCustomer, gameState, haptic])
 
   // Tap handler - work on current order
   const handleTap = useCallback(() => {
     if (!gameState.currentOrder) return
 
+    // Haptic feedback on tap
+    haptic('light')
+
     // Track tap for challenge
     setSessionTaps(prev => prev + 1)
+
+    // Check if this tap will complete the order
+    const willComplete = gameState.currentOrder.workDone + gameState.tapPower >= gameState.currentOrder.workRequired
+
+    if (willComplete) {
+      // Order complete! Celebration
+      haptic('heavy')
+      setShowConfetti(true)
+      setTimeout(() => setShowConfetti(false), 1000)
+    }
 
     setGameState(prev => {
       if (!prev.currentOrder) return prev
@@ -531,6 +582,9 @@ export default function Game() {
         // Update regulars tracking
         const newRegulars = updateRegulars(prev.regulars, prev.currentOrder.customerName, drinkName)
 
+        // ⌐◨-◨ Track Noun customers served
+        const wasNoun = prev.currentOrder.isNoun
+
         return {
           ...prev,
           beans: prev.beans + payment,
@@ -544,6 +598,7 @@ export default function Game() {
           },
           regulars: newRegulars,
           currentOrder: null,  // Clear order, player must select next customer
+          nounsServed: prev.nounsServed + (wasNoun ? 1 : 0),  // ⌐◨-◨
         }
       }
 
@@ -552,7 +607,7 @@ export default function Game() {
         currentOrder: { ...prev.currentOrder, workDone: newWorkDone },
       }
     })
-  }, [gameState.currentOrder])
+  }, [gameState.currentOrder, gameState.tapPower, haptic])
 
   // Upgrade handlers
   const handleUpgradeWithBeans = useCallback((upgradeId: UpgradeId) => {
@@ -686,7 +741,27 @@ export default function Game() {
   const nextDynasty = getNextDynasty(gameState)
 
   return (
-    <div className="min-h-screen flex flex-col px-4 py-4 max-w-md mx-auto">
+    <div className={`min-h-screen flex flex-col px-4 py-4 max-w-md mx-auto transition-transform ${screenShake ? 'animate-shake' : ''}`}>
+      {/* Confetti celebration */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-confetti"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 0.5}s`,
+                backgroundColor: ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6'][i % 5],
+                width: '10px',
+                height: '10px',
+                borderRadius: Math.random() > 0.5 ? '50%' : '0',
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Offline earnings modal */}
       {offlineEarnings && offlineEarnings.beans > 0 && (
         <div
@@ -836,19 +911,26 @@ export default function Game() {
             {/* Drink options */}
             <div className="text-silver-400 text-xs mb-2">Select the correct drink:</div>
             <div className="grid grid-cols-2 gap-2">
-              {getUnlockedDrinks(gameState.totalOrdersCompleted).map((drink) => {
+              {getUnlockedDrinks(gameState.totalOrdersCompleted, gameState).map((drink) => {
                 const masteryTier = getMasteryTier(gameState.drinksMade[drink.drink] || 0)
+                const isNounish = drink.drink === 'The Nounish'
 
                 return (
                   <button
                     key={drink.drink}
                     onClick={() => handleSelectDrink(drink)}
-                    className="p-3 rounded-xl transition-all text-left bg-silver-800 border border-silver-700 hover:bg-silver-700 hover:border-silver-500"
+                    className={`p-3 rounded-xl transition-all text-left border hover:bg-silver-700 ${
+                      isNounish
+                        ? 'bg-gradient-to-br from-red-900/30 to-silver-800 border-red-500/50 hover:border-red-400'
+                        : 'bg-silver-800 border-silver-700 hover:border-silver-500'
+                    }`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{drink.emoji}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-silver-100 text-sm truncate">{drink.drink}</div>
+                        <div className={`font-medium text-sm truncate ${isNounish ? 'text-red-200' : 'text-silver-100'}`}>
+                          {drink.drink}
+                        </div>
                         <div className="text-silver-400 text-xs">+{drink.baseValue} beans</div>
                       </div>
                       <span className="text-xs">{masteryTier.emoji}</span>
@@ -856,6 +938,21 @@ export default function Game() {
                   </button>
                 )
               })}
+              {/* Show locked drinks as teaser */}
+              {ALL_DRINKS.filter(d => d.unlocksAt > gameState.totalOrdersCompleted).slice(0, 2).map((drink) => (
+                <div
+                  key={drink.drink}
+                  className="p-3 rounded-xl bg-silver-900/50 border border-silver-800 opacity-60"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl blur-sm">❓</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-silver-500 text-sm">???</div>
+                      <div className="text-silver-600 text-xs">🔒 {drink.unlocksAt} orders</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <button
@@ -969,6 +1066,7 @@ export default function Game() {
               const isUrgent = patiencePercent < 30
               const regular = gameState.regulars[customer.customerName]
               const isKnownRegular = regular && regular.visitsCount >= VISITS_TO_BECOME_REGULAR
+              const isNoun = customer.isNoun  // ⌐◨-◨
 
               return (
                 <button
@@ -977,9 +1075,10 @@ export default function Game() {
                   disabled={!!gameState.currentOrder}
                   className={`flex-shrink-0 flex flex-col items-center p-1 rounded-lg transition-all
                     ${gameState.currentOrder ? 'opacity-50 cursor-not-allowed' : 'hover:bg-silver-700/50 cursor-pointer'}
-                    ${isKnownRegular ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-silver-800'}
-                    ${isUrgent ? 'animate-pulse' : ''}`}
-                  title={`${customer.customerName} (${customer.customerType})${isKnownRegular ? ' ⭐ Regular' : ''}`}
+                    ${isNoun ? 'bg-gradient-to-br from-red-600/40 to-red-900/40 border-2 border-red-500/60 animate-pulse' :
+                      isKnownRegular ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-silver-800'}
+                    ${isUrgent && !isNoun ? 'animate-pulse' : ''}`}
+                  title={`${customer.customerName} (${customer.customerType})${isKnownRegular ? ' ⭐ Regular' : ''}${isNoun ? ' ⌐◨-◨ NOUN!' : ''}`}
                 >
                   <span className="text-lg">{customer.customerEmoji}</span>
                   <span className="text-[9px] text-silver-400 truncate w-10 text-center">
@@ -1037,13 +1136,59 @@ export default function Game() {
         </div>
       )}
 
-      {/* Next unlock teaser */}
-      {nextDrink && (
-        <div className="bg-silver-800/30 rounded-lg px-3 py-1.5 mb-3 text-xs text-silver-400">
-          <span className="text-silver-500">Next unlock:</span> {nextDrink.emoji} {nextDrink.drink} at {nextDrink.unlocksAt} orders
-          <span className="text-silver-500 ml-1">({gameState.totalOrdersCompleted}/{nextDrink.unlocksAt})</span>
+      {/* Coming Soon / Goals Teaser */}
+      <div className="bg-gradient-to-r from-silver-800/50 to-silver-900/50 rounded-lg px-3 py-2 mb-3 border border-silver-700/30">
+        <div className="text-[10px] text-silver-500 mb-1">🎯 NEXT GOALS</div>
+        <div className="flex gap-3 overflow-x-auto text-xs">
+          {/* Next drink unlock */}
+          {nextDrink && (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="text-base blur-[2px]">{nextDrink.emoji}</span>
+              <div>
+                <div className="text-silver-300 font-medium">New Drink</div>
+                <div className="text-silver-500 text-[10px]">
+                  {gameState.totalOrdersCompleted}/{nextDrink.unlocksAt} orders
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Next franchise */}
+          {nextFranchise && (
+            <div className="flex items-center gap-1.5 flex-shrink-0 border-l border-silver-700/50 pl-3">
+              <span className="text-base">{nextFranchise.emoji}</span>
+              <div>
+                <div className="text-blue-300 font-medium">{nextFranchise.name}</div>
+                <div className="text-silver-500 text-[10px]">
+                  {formatNumber(gameState.lifetimeBeans)}/{formatNumber(nextFranchise.beans)} beans
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Next customer type unlock */}
+          {(() => {
+            const nextCustomer = ALL_CUSTOMERS.find(c => {
+              if (c.unlocksAt.type === 'orders') return gameState.totalOrdersCompleted < c.unlocksAt.count
+              if (c.unlocksAt.type === 'franchises') return gameState.franchises < c.unlocksAt.count
+              if (c.unlocksAt.type === 'empires') return gameState.empires < c.unlocksAt.count
+              return false
+            })
+            if (!nextCustomer) return null
+            return (
+              <div className="flex items-center gap-1.5 flex-shrink-0 border-l border-silver-700/50 pl-3">
+                <span className="text-base grayscale">❓</span>
+                <div>
+                  <div className="text-amber-300 font-medium">New Customer</div>
+                  <div className="text-silver-500 text-[10px]">
+                    {nextCustomer.unlocksAt.count} {nextCustomer.unlocksAt.type}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
-      )}
+      </div>
 
       {/* Current Order / Select Customer */}
       <div className="flex-1 flex flex-col items-center justify-center mb-3">
@@ -1223,15 +1368,45 @@ export default function Game() {
               )
             })}
 
-            {/* Locked tier hints */}
+            {/* Locked Tier 2 upgrades preview */}
             {gameState.franchises === 0 && gameState.empires === 0 && (
-              <div className="text-center text-silver-500 text-xs py-2">
-                🔒 Tier 2 upgrades unlock at first Franchise
+              <div className="mt-2 pt-2 border-t border-silver-700/50">
+                <div className="text-silver-500 text-xs mb-2 flex items-center gap-1">
+                  <span>🔒</span> Unlocks at first Franchise:
+                </div>
+                {UPGRADES.filter(u => u.tier === 2).slice(0, 2).map(upgrade => (
+                  <div key={upgrade.id} className="bg-silver-900/30 border border-silver-800/50 rounded-xl p-2 mb-1 opacity-50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl grayscale">{upgrade.emoji}</span>
+                      <div className="flex-1">
+                        <div className="font-medium text-silver-500 text-sm">{upgrade.name}</div>
+                        <div className="text-silver-600 text-xs">{upgrade.description}</div>
+                      </div>
+                      <span className="text-blue-400/50 text-[10px] px-1 rounded bg-blue-500/10">T2</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            {gameState.empires === 0 && gameState.franchises > 0 && (
-              <div className="text-center text-silver-500 text-xs py-2">
-                🔒 Tier 3 upgrades unlock at first Empire
+
+            {/* Locked Tier 3 upgrades preview */}
+            {gameState.empires === 0 && (gameState.franchises > 0 || gameState.dynasties > 0) && (
+              <div className="mt-2 pt-2 border-t border-silver-700/50">
+                <div className="text-silver-500 text-xs mb-2 flex items-center gap-1">
+                  <span>🔒</span> Unlocks at first Empire:
+                </div>
+                {UPGRADES.filter(u => u.tier === 3).slice(0, 2).map(upgrade => (
+                  <div key={upgrade.id} className="bg-silver-900/30 border border-silver-800/50 rounded-xl p-2 mb-1 opacity-50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl grayscale">{upgrade.emoji}</span>
+                      <div className="flex-1">
+                        <div className="font-medium text-silver-500 text-sm">{upgrade.name}</div>
+                        <div className="text-silver-600 text-xs">{upgrade.description}</div>
+                      </div>
+                      <span className="text-purple-400/50 text-[10px] px-1 rounded bg-purple-500/10">T3</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1419,17 +1594,24 @@ export default function Game() {
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-2">
-                {ALL_DRINKS.filter(d => d.unlocksAt <= gameState.totalOrdersCompleted).map(drink => {
+                {getUnlockedDrinks(gameState.totalOrdersCompleted, gameState).map(drink => {
                   const made = gameState.drinksMade[drink.drink] || 0
                   const tier = getMasteryTier(made)
+                  const isNounish = drink.drink === 'The Nounish'
                   return (
                     <button
                       key={drink.drink}
                       onClick={() => setSelectedDrink(drink)}
-                      className="flex flex-col items-center p-2 bg-silver-900/50 rounded-lg hover:bg-silver-700/50 transition-colors"
+                      className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
+                        isNounish
+                          ? 'bg-gradient-to-br from-red-900/50 to-silver-900/50 border border-red-500/30 hover:border-red-400'
+                          : 'bg-silver-900/50 hover:bg-silver-700/50'
+                      }`}
                     >
                       <span className="text-xl">{drink.emoji}</span>
-                      <span className="text-[10px] text-silver-400 truncate w-full text-center">{drink.drink}</span>
+                      <span className={`text-[10px] truncate w-full text-center ${isNounish ? 'text-red-300' : 'text-silver-400'}`}>
+                        {drink.drink}
+                      </span>
                       <span className="text-xs">{tier.emoji}</span>
                     </button>
                   )
@@ -1437,21 +1619,99 @@ export default function Game() {
               </div>
             </div>
 
-            {/* Achievements compact */}
-            <div className="bg-silver-800/50 border border-silver-700/50 rounded-xl p-2">
-              <div className="text-xs text-silver-400 mb-1">
-                Achievements: {gameState.unlockedAchievements.length}/{ACHIEVEMENTS.length}
+            {/* Customer Types - Unlocked & Locked */}
+            <div className="bg-silver-800/50 border border-silver-700/50 rounded-xl p-3">
+              <div className="font-bold text-silver-100 text-sm mb-2">👥 Customer Types</div>
+              <div className="space-y-1">
+                {ALL_CUSTOMERS.map(customer => {
+                  const isUnlocked =
+                    (customer.unlocksAt.type === 'orders' && gameState.totalOrdersCompleted >= customer.unlocksAt.count) ||
+                    (customer.unlocksAt.type === 'franchises' && gameState.franchises >= customer.unlocksAt.count) ||
+                    (customer.unlocksAt.type === 'empires' && gameState.empires >= customer.unlocksAt.count)
+
+                  return (
+                    <div
+                      key={customer.name}
+                      className={`flex items-center gap-2 py-1 px-2 rounded ${
+                        isUnlocked ? 'bg-silver-700/30' : 'bg-silver-900/30 opacity-50'
+                      }`}
+                    >
+                      <span className={`text-lg ${isUnlocked ? '' : 'grayscale'}`}>
+                        {isUnlocked ? customer.emoji : '❓'}
+                      </span>
+                      <div className="flex-1">
+                        <div className={`text-xs font-medium ${isUnlocked ? 'text-silver-200' : 'text-silver-500'}`}>
+                          {isUnlocked ? customer.name : '???'}
+                        </div>
+                        {isUnlocked ? (
+                          <div className="text-[10px] text-silver-400">
+                            {customer.valueMultiplier}x value • {customer.patience}s patience
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-silver-600">
+                            🔒 {customer.unlocksAt.count} {customer.unlocksAt.type}
+                          </div>
+                        )}
+                      </div>
+                      {isUnlocked && customer.valueMultiplier >= 2 && (
+                        <span className="text-amber-400 text-[10px]">💰</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-              <div className="flex flex-wrap gap-1">
-                {ACHIEVEMENTS.map(a => (
-                  <span
-                    key={a.id}
-                    className={`text-sm ${gameState.unlockedAchievements.includes(a.id) ? '' : 'opacity-30'}`}
-                    title={`${a.name}: ${a.description}`}
-                  >
-                    {a.emoji}
-                  </span>
-                ))}
+            </div>
+
+            {/* Achievements with secrets */}
+            <div className="bg-silver-800/50 border border-silver-700/50 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-bold text-silver-100 text-sm">🏅 Achievements</div>
+                <div className="text-xs text-silver-400">
+                  {gameState.unlockedAchievements.length}/{ACHIEVEMENTS.length}
+                </div>
+              </div>
+              <div className="space-y-1">
+                {/* Regular achievements */}
+                {ACHIEVEMENTS.filter(a => !a.secret).map(a => {
+                  const unlocked = gameState.unlockedAchievements.includes(a.id)
+                  return (
+                    <div
+                      key={a.id}
+                      className={`flex items-center gap-2 py-1 px-2 rounded text-xs ${
+                        unlocked ? 'bg-green-500/20' : 'bg-silver-900/30 opacity-60'
+                      }`}
+                    >
+                      <span>{a.emoji}</span>
+                      <span className={unlocked ? 'text-silver-200' : 'text-silver-500'}>{a.name}</span>
+                      {unlocked && <span className="text-green-400 ml-auto">✓</span>}
+                    </div>
+                  )
+                })}
+
+                {/* Secret achievements */}
+                <div className="text-silver-500 text-[10px] mt-2 mb-1">🔮 Secret Achievements</div>
+                {ACHIEVEMENTS.filter(a => a.secret).map(a => {
+                  const unlocked = gameState.unlockedAchievements.includes(a.id)
+                  return (
+                    <div
+                      key={a.id}
+                      className={`flex items-center gap-2 py-1 px-2 rounded text-xs ${
+                        unlocked ? 'bg-purple-500/20' : 'bg-silver-900/30'
+                      }`}
+                    >
+                      <span>{unlocked ? a.emoji : '❓'}</span>
+                      <div className="flex-1">
+                        <div className={unlocked ? 'text-purple-200' : 'text-silver-500'}>
+                          {unlocked ? a.name : '???'}
+                        </div>
+                        {!unlocked && a.hint && (
+                          <div className="text-silver-600 text-[10px] italic">{a.hint}</div>
+                        )}
+                      </div>
+                      {unlocked && <span className="text-purple-400 ml-auto">✓</span>}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
