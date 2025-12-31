@@ -252,6 +252,8 @@ export default function Game() {
     }
     // ⌐◨-◨ Nouns easter egg migration
     if (parsed.nounsServed === undefined) parsed.nounsServed = 0
+    // Auto-brew migration
+    if (parsed.upgradeLevels.autoBrew === undefined) parsed.upgradeLevels.autoBrew = 0
     return parsed
   }
 
@@ -452,6 +454,47 @@ export default function Game() {
           updated.beans = updated.beans + passivePerTick
           updated.lifetimeBeans = updated.lifetimeBeans + passivePerTick
           updated.totalLifetimeBeans = updated.totalLifetimeBeans + passivePerTick
+        }
+
+        // AUTO-BREW: Your current order progresses automatically (tap = bonus speed)
+        if (updated.currentOrder) {
+          // Base auto-brew speed: 0.5 work per tick (5 per second)
+          // Auto-Brew upgrade increases this
+          const autoBrewSpeed = 0.5 + (prev.upgradeLevels.autoBrew || 0) * 0.3
+          const newWorkDone = updated.currentOrder.workDone + autoBrewSpeed
+
+          if (newWorkDone >= updated.currentOrder.workRequired) {
+            // Order complete!
+            let payment = updated.currentOrder.value
+
+            // Tips chance
+            if (prev.upgradeLevels.tippingCulture > 0 && Math.random() < prev.upgradeLevels.tippingCulture * 0.05) {
+              payment = Math.floor(payment * 1.5)
+            }
+
+            // Track drink made
+            updated.drinksMade = {
+              ...updated.drinksMade,
+              [updated.currentOrder.drink]: (updated.drinksMade[updated.currentOrder.drink] || 0) + 1,
+            }
+
+            // Update regulars
+            updated.regulars = updateRegulars(updated.regulars, updated.currentOrder.customerName, updated.currentOrder.drink)
+
+            // Track Nouns
+            if (updated.currentOrder.isNoun) {
+              updated.nounsServed = (updated.nounsServed || 0) + 1
+            }
+
+            updated.beans = updated.beans + payment
+            updated.lifetimeBeans = updated.lifetimeBeans + payment
+            updated.totalLifetimeBeans = updated.totalLifetimeBeans + payment
+            updated.ordersCompleted = updated.ordersCompleted + 1
+            updated.totalOrdersCompleted = updated.totalOrdersCompleted + 1
+            updated.currentOrder = null
+          } else {
+            updated.currentOrder = { ...updated.currentOrder, workDone: newWorkDone }
+          }
         }
 
         // Check achievements
@@ -1242,7 +1285,7 @@ export default function Game() {
               className="relative w-full py-6 rounded-2xl bg-gradient-to-br from-silver-300 to-silver-500
                          text-silver-900 font-bold text-xl active:scale-95 transition-transform shadow-lg"
             >
-              ☕ Make Drink
+              ⚡ Boost!
               {showPayment && (
                 <span className="absolute top-1 right-3 text-green-400 font-bold animate-bounce text-sm">
                   +{showPayment.amount}
@@ -1251,8 +1294,9 @@ export default function Game() {
             </button>
 
             <div className="text-center text-silver-500 text-xs mt-1">
-              +{gameState.tapPower} per tap
-              {gameState.baristas > 0 && ` • ${gameState.baristas} barista${gameState.baristas !== 1 ? 's' : ''} helping`}
+              <span className="text-silver-400">Auto-brewing</span>
+              {gameState.tapPower > 1 && <span> • Tap +{gameState.tapPower} bonus</span>}
+              {gameState.baristas > 0 && <span> • {gameState.baristas} barista{gameState.baristas !== 1 ? 's' : ''}</span>}
             </div>
           </div>
         ) : gameState.waitingCustomers.length > 0 ? (

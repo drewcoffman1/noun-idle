@@ -87,7 +87,8 @@ export interface GameState {
   // Upgrade levels (for cost calculation)
   upgradeLevels: {
     // Tier 1 - Basic
-    tapPower: number
+    tapPower: number        // Bonus tap speed
+    autoBrew: number        // Auto-brew speed (orders complete themselves)
     baristas: number
     orderValue: number
     serviceSpeed: number
@@ -354,22 +355,35 @@ export interface Upgrade {
 export const UPGRADES: Upgrade[] = [
   // ========== TIER 1 - Basic (always available) ==========
   {
+    id: 'autoBrew',
+    name: 'Auto-Brew',
+    description: 'Orders complete automatically over time',
+    emoji: '⚙️',
+    tier: 1,
+    baseCost: 25,
+    costMultiplier: 1.5,
+    baseNounCost: 2000,
+    nounCostMultiplier: 1.15,
+    maxLevel: 50,
+    getEffect: (level) => `${(5 + level * 3).toFixed(0)} work/sec`,
+  },
+  {
     id: 'tapPower',
-    name: 'Faster Hands',
-    description: 'Each tap does more work',
-    emoji: '✋',
+    name: 'Espresso Boost',
+    description: 'Tapping adds bonus speed on top of auto-brew',
+    emoji: '👆',
     tier: 1,
     baseCost: 15,
     costMultiplier: 1.4,
     baseNounCost: 1000,
     nounCostMultiplier: 1.15,
     maxLevel: 100,
-    getEffect: (level) => `+${1 + level} per tap`,
+    getEffect: (level) => `+${1 + level} bonus per tap`,
   },
   {
     id: 'baristas',
     name: 'Hire Barista',
-    description: 'Baristas serve customers for you',
+    description: 'Baristas auto-serve customers from the queue',
     emoji: '👨‍🍳',
     tier: 1,
     baseCost: 50,
@@ -377,7 +391,7 @@ export const UPGRADES: Upgrade[] = [
     baseNounCost: 5000,
     nounCostMultiplier: 1.2,
     maxLevel: 50,
-    getEffect: (level) => `${level} barista${level !== 1 ? 's' : ''} (auto-serve)`,
+    getEffect: (level) => `${level} barista${level !== 1 ? 's' : ''} working`,
   },
   {
     id: 'orderValue',
@@ -845,6 +859,7 @@ export function createInitialState(): GameState {
     baristas: 0,
     upgradeLevels: {
       tapPower: 0,
+      autoBrew: 0,
       baristas: 0,
       orderValue: 0,
       serviceSpeed: 0,
