@@ -687,12 +687,11 @@ export function generateCustomer(state: GameState, customNames: string[] = []): 
   // Pick customer type (Noun or regular)
   const customerType = isNounCustomer ? NOUN_CUSTOMER : unlockedCustomers[Math.floor(Math.random() * unlockedCustomers.length)]
 
-  // Pick random name (include Nouns names as easter eggs)
-  const allNames = [...CUSTOMER_NAMES, ...customNames, ...NOUNS_NAMES]
-  // If it's a Noun customer, pick from Nouns names
+  // Pick random name - Nouns names ONLY for actual Noun customers
+  const regularNames = [...CUSTOMER_NAMES, ...customNames]
   const customerName = isNounCustomer
     ? NOUNS_NAMES[Math.floor(Math.random() * NOUNS_NAMES.length)]
-    : allNames[Math.floor(Math.random() * allNames.length)]
+    : regularNames[Math.floor(Math.random() * regularNames.length)]
 
   // Check if this person is a known regular
   const regular = state.regulars[customerName]
