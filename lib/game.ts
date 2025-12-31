@@ -94,7 +94,7 @@ export const POPUP_COLLABS: PopupCollab[] = [
 // Popup timing constants
 export const POPUP_MIN_INTERVAL = 45000   // Minimum 45 seconds between popups
 export const POPUP_MAX_INTERVAL = 120000  // Maximum 2 minutes between popups
-export const POPUP_DURATION = 8000        // 8 seconds to tap it
+export const POPUP_DURATION = 5000        // 5 seconds to tap it - quick!
 
 export interface GameState {
   // Currency
@@ -1301,72 +1301,54 @@ export function checkPopupExpiry(state: GameState): GameState {
   return state
 }
 
-// Claim a popup - completes all active orders instantly!
-export function claimPopup(state: GameState): { newState: GameState; beansEarned: number; ordersCompleted: number } {
+// Claim a popup - serves everyone in line instantly!
+export function claimPopup(state: GameState): { newState: GameState; beansEarned: number; customersServed: number } {
   if (!state.activePopup) {
-    return { newState: state, beansEarned: 0, ordersCompleted: 0 }
+    return { newState: state, beansEarned: 0, customersServed: 0 }
   }
 
   const collab = state.activePopup.collab
   let newState = { ...state }
   let totalBeans = 0
-  let ordersCompleted = 0
+  let customersServed = 0
+  let drinksMade = { ...state.drinksMade }
+  let regulars = { ...state.regulars }
 
-  // Complete current order if exists
-  if (newState.currentOrder) {
-    const order = newState.currentOrder
-    const beans = order.value
+  // Serve everyone in the waiting line!
+  for (const customer of state.waitingCustomers) {
+    // Find drink info for value calculation
+    const drinkInfo = ALL_DRINKS.find(d => d.drink === customer.desiredDrink)
+    const baseValue = drinkInfo?.baseValue || 10
+
+    // Calculate value with multipliers
+    const totalMult = getTotalMultiplier(state)
+    const valueMult = customer.valueMultiplier || 1
+    const beans = Math.floor(baseValue * totalMult * valueMult)
+
     totalBeans += beans
-    ordersCompleted++
+    customersServed++
 
     // Track drink made
-    const drinksMade = { ...newState.drinksMade }
-    drinksMade[order.drink] = (drinksMade[order.drink] || 0) + 1
+    drinksMade[customer.desiredDrink] = (drinksMade[customer.desiredDrink] || 0) + 1
+
+    // Update regulars
+    regulars = updateRegulars(regulars, customer.customerName, customer.desiredDrink)
 
     // Track Noun if applicable
-    if (order.isNoun) {
+    if (customer.isNoun) {
       newState.nounsServed = (newState.nounsServed || 0) + 1
-    }
-
-    newState = {
-      ...newState,
-      currentOrder: null,
-      drinksMade,
-      ordersCompleted: newState.ordersCompleted + 1,
-      totalOrdersCompleted: newState.totalOrdersCompleted + 1,
     }
   }
 
-  // Complete all barista orders
-  for (const order of newState.baristaOrders) {
-    const beans = order.value
-    totalBeans += beans
-    ordersCompleted++
-
-    // Track drink made
-    const drinksMade = { ...newState.drinksMade }
-    drinksMade[order.drink] = (drinksMade[order.drink] || 0) + 1
-
-    // Track Noun if applicable
-    if (order.isNoun) {
-      newState.nounsServed = (newState.nounsServed || 0) + 1
-    }
-
-    newState = {
-      ...newState,
-      drinksMade,
-      ordersCompleted: newState.ordersCompleted + 1,
-      totalOrdersCompleted: newState.totalOrdersCompleted + 1,
-    }
-  }
-  newState.baristaOrders = []
+  // Clear the line
+  newState.waitingCustomers = []
 
   // Bonus based on rarity
   let bonusMultiplier = 1
   if (collab.rarity === 'rare') bonusMultiplier = 1.5
   if (collab.rarity === 'legendary') bonusMultiplier = 2
 
-  // Minimum beans if no orders were active
+  // Minimum beans if no customers were in line
   if (totalBeans === 0) {
     totalBeans = Math.floor(50 * bonusMultiplier * (1 + newState.franchises * 0.1))
   } else {
@@ -1375,12 +1357,16 @@ export function claimPopup(state: GameState): { newState: GameState; beansEarned
 
   newState = {
     ...newState,
+    drinksMade,
+    regulars,
     beans: newState.beans + totalBeans,
     lifetimeBeans: newState.lifetimeBeans + totalBeans,
     totalLifetimeBeans: newState.totalLifetimeBeans + totalBeans,
+    ordersCompleted: newState.ordersCompleted + customersServed,
+    totalOrdersCompleted: newState.totalOrdersCompleted + customersServed,
     activePopup: null,
     popupsClaimed: (newState.popupsClaimed || 0) + 1,
   }
 
-  return { newState, beansEarned: totalBeans, ordersCompleted }
+  return { newState, beansEarned: totalBeans, customersServed }
 }

@@ -599,19 +599,19 @@ export default function Game() {
     setShowConfetti(true)
     setTimeout(() => setShowConfetti(false), 1500)
 
-    const { newState, beansEarned, ordersCompleted } = claimPopup(gameState)
+    const { newState, beansEarned, customersServed } = claimPopup(gameState)
 
     // Show notification
     setPopupClaimed({
       name: gameState.activePopup.collab.name,
       beans: beansEarned,
-      orders: ordersCompleted,
+      orders: customersServed,
     })
     setTimeout(() => setPopupClaimed(null), 3000)
 
     // Track for session/challenges
     setSessionBeans(prev => prev + beansEarned)
-    setSessionOrders(prev => prev + ordersCompleted)
+    setSessionOrders(prev => prev + customersServed)
 
     setGameState(newState)
   }, [gameState, haptic])
@@ -890,7 +890,7 @@ export default function Game() {
             <div className="font-bold text-center">{popupClaimed.name}</div>
             <div className="text-center text-sm">
               +{formatNumber(popupClaimed.beans)} beans
-              {popupClaimed.orders > 0 && ` • ${popupClaimed.orders} orders completed!`}
+              {popupClaimed.orders > 0 && ` • ${popupClaimed.orders} customers served!`}
             </div>
           </div>
         </div>
