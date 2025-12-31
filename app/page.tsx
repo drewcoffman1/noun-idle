@@ -201,6 +201,7 @@ export default function Game() {
 
   // Helper to migrate old saves
   const migrateSave = (parsed: GameState): GameState => {
+    if (!parsed.upgradeLevels.customerPatience) parsed.upgradeLevels.customerPatience = 0
     if (!parsed.upgradeLevels.doubleShot) parsed.upgradeLevels.doubleShot = 0
     if (!parsed.upgradeLevels.tippingCulture) parsed.upgradeLevels.tippingCulture = 0
     if (!parsed.upgradeLevels.expressLine) parsed.upgradeLevels.expressLine = 0
@@ -325,7 +326,8 @@ export default function Game() {
         const maxQueue = getMaxQueueSize(prev)
 
         // Customer arrivals (generate WaitingCustomer, not Order)
-        const customerInterval = Math.max(1, 5 - prev.upgradeLevels.customerRate * 0.3) * 1000
+        // Fixed 3 second arrival rate - Marketing increases queue capacity, not speed
+        const customerInterval = 3000
         if (now - prev.lastCustomerTime >= customerInterval && prev.waitingCustomers.length < maxQueue) {
           const newCustomer = generateCustomer(prev, customNamesRef.current)
           updated.waitingCustomers = [...prev.waitingCustomers, newCustomer]

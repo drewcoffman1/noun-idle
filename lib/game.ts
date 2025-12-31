@@ -87,7 +87,8 @@ export interface GameState {
     baristas: number
     orderValue: number
     serviceSpeed: number
-    customerRate: number
+    customerRate: number      // Queue capacity
+    customerPatience: number  // Patience bonus
     // Tier 2 - Advanced (unlocks at Franchise 1)
     doubleShot: number      // Chance for 2x work per tap
     tippingCulture: number  // Chance for tips
@@ -349,7 +350,7 @@ export const UPGRADES: Upgrade[] = [
   {
     id: 'customerRate',
     name: 'Marketing',
-    description: 'Customers arrive faster',
+    description: 'Bigger reputation = longer lines',
     emoji: '📢',
     tier: 1,
     baseCost: 200,
@@ -357,7 +358,20 @@ export const UPGRADES: Upgrade[] = [
     baseNounCost: 20000,
     nounCostMultiplier: 1.2,
     maxLevel: 20,
-    getEffect: (level) => `+${level * 6}% more customers`,
+    getEffect: (level) => `Queue +${level} capacity`,
+  },
+  {
+    id: 'customerPatience',
+    name: 'Cozy Atmosphere',
+    description: 'Comfy seating, good vibes',
+    emoji: '🛋️',
+    tier: 1,
+    baseCost: 100,
+    costMultiplier: 1.6,
+    baseNounCost: 10000,
+    nounCostMultiplier: 1.15,
+    maxLevel: 20,
+    getEffect: (level) => `+${level * 15}% patience`,
   },
 
   // ========== TIER 2 - Advanced (unlock at Franchise 1) ==========
@@ -598,14 +612,18 @@ export function generateCustomer(state: GameState, customNames: string[] = []): 
     desiredDrink = unlockedDrinks[Math.floor(Math.random() * unlockedDrinks.length)]
   }
 
+  // Apply patience bonus from Cozy Atmosphere upgrade
+  const patienceMultiplier = 1 + (state.upgradeLevels.customerPatience * 0.15)
+  const finalPatience = customerType.patience * patienceMultiplier
+
   return {
     id: `customer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     customerName,
     customerEmoji: customerType.emoji,
     customerType: customerType.name,
     valueMultiplier: customerType.valueMultiplier,
-    patience: customerType.patience,
-    maxPatience: customerType.patience,
+    patience: finalPatience,
+    maxPatience: finalPatience,
     arrivedAt: Date.now(),
     desiredDrink: desiredDrink.drink,
     desiredDrinkEmoji: desiredDrink.emoji,
@@ -748,6 +766,7 @@ export function createInitialState(): GameState {
       orderValue: 0,
       serviceSpeed: 0,
       customerRate: 0,
+      customerPatience: 0,
       doubleShot: 0,
       tippingCulture: 0,
       expressLine: 0,
@@ -828,7 +847,8 @@ export function formatNumber(n: number): string {
 }
 
 export function getMaxQueueSize(state: GameState): number {
-  return 8 + (state.upgradeLevels.expressLine * 2)
+  // Base queue + Marketing bonus + Express Line bonus
+  return 5 + state.upgradeLevels.customerRate + (state.upgradeLevels.expressLine * 2)
 }
 
 export function getBaristaEffectiveness(state: GameState): number {
