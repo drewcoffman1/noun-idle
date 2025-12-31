@@ -823,26 +823,18 @@ export default function Game() {
               {/* Speech bubble with their order */}
               <div className="mt-3 bg-white text-silver-900 rounded-2xl px-4 py-3 relative">
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white rotate-45"></div>
-                {selectedCustomer.isRegular ? (
-                  <div>
-                    <div className="font-medium">I'll have my usual, please!</div>
-                    <div className="text-xs text-silver-500 mt-1">⭐ Regular customer</div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="text-sm text-silver-600">I'd like a...</div>
-                    <div className="font-bold text-lg">{selectedCustomer.desiredDrinkEmoji} {selectedCustomer.desiredDrink}</div>
-                  </div>
-                )}
+                <div>
+                  {selectedCustomer.isRegular && (
+                    <div className="text-xs text-amber-600 mb-1">⭐ Regular customer</div>
+                  )}
+                  <div className="text-sm text-silver-600">I'd like a...</div>
+                  <div className="font-bold text-lg">{selectedCustomer.desiredDrinkEmoji} {selectedCustomer.desiredDrink}</div>
+                </div>
               </div>
             </div>
 
             {/* Drink options */}
-            <div className="text-silver-400 text-xs mb-2">
-              {selectedCustomer.isRegular
-                ? "What's their usual? Pick carefully!"
-                : "Select the correct drink:"}
-            </div>
+            <div className="text-silver-400 text-xs mb-2">Select the correct drink:</div>
             <div className="grid grid-cols-2 gap-2">
               {getUnlockedDrinks(gameState.totalOrdersCompleted).map((drink) => {
                 const masteryTier = getMasteryTier(gameState.drinksMade[drink.drink] || 0)
