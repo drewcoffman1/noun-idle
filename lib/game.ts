@@ -59,6 +59,43 @@ export interface Achievement {
   hint?: string     // Vague hint for secret achievements
 }
 
+// Pop-up Collab - like Cookie Clicker's Golden Cookies
+export interface PopupCollab {
+  id: string
+  name: string
+  emoji: string
+  description: string
+  rarity: 'common' | 'rare' | 'legendary'  // Affects spawn chance and rewards
+}
+
+export interface ActivePopup {
+  collab: PopupCollab
+  spawnedAt: number
+  expiresAt: number
+  x: number  // Position 0-100 (percentage)
+  y: number  // Position 0-100 (percentage)
+}
+
+// Themed pop-up collabs
+export const POPUP_COLLABS: PopupCollab[] = [
+  // Common (60% of spawns)
+  { id: 'local_roaster', name: 'Local Roaster Pop-Up!', emoji: '🫘', description: 'Fresh beans from a local roaster', rarity: 'common' },
+  { id: 'pastry_collab', name: 'Pastry Collab!', emoji: '🥐', description: 'A local bakery dropped off treats', rarity: 'common' },
+  { id: 'latte_art', name: 'Latte Art Contest!', emoji: '🎨', description: 'Show off your skills', rarity: 'common' },
+  // Rare (30% of spawns)
+  { id: 'artist_takeover', name: 'Artist Takeover!', emoji: '🖼️', description: 'A local artist is featuring their work', rarity: 'rare' },
+  { id: 'coffee_critic', name: 'Coffee Critic Visit!', emoji: '📝', description: 'A famous critic is reviewing your shop', rarity: 'rare' },
+  { id: 'influencer', name: 'Influencer Spotted!', emoji: '📸', description: 'Someone with followers is posting', rarity: 'rare' },
+  // Legendary (10% of spawns) - Nouns themed!
+  { id: 'nouns_collab', name: '⌐◨-◨ Nouns Collab!', emoji: '⌐◨-◨', description: 'The Nouns community is here', rarity: 'legendary' },
+  { id: 'nounish_popup', name: 'Nounish Pop-Up!', emoji: '🏛️', description: 'One noun, every day, forever', rarity: 'legendary' },
+]
+
+// Popup timing constants
+export const POPUP_MIN_INTERVAL = 45000   // Minimum 45 seconds between popups
+export const POPUP_MAX_INTERVAL = 120000  // Maximum 2 minutes between popups
+export const POPUP_DURATION = 8000        // 8 seconds to tap it
+
 export interface GameState {
   // Currency
   beans: number
@@ -129,6 +166,11 @@ export interface GameState {
 
   // ⌐◨-◨ Nouns Easter Eggs
   nounsServed: number  // Track how many Noun customers served
+
+  // Pop-up Collabs (like Golden Cookies)
+  activePopup: ActivePopup | null
+  lastPopupTime: number
+  popupsClaimed: number  // Track total popups claimed
 }
 
 // ============================================
@@ -881,6 +923,9 @@ export function createInitialState(): GameState {
     lastUpdate: Date.now(),
     lastCustomerTime: Date.now(),
     nounsServed: 0,  // ⌐◨-◨
+    activePopup: null,
+    lastPopupTime: Date.now(),
+    popupsClaimed: 0,
   }
 }
 
@@ -897,7 +942,8 @@ export function resetForFranchise(state: GameState, bonusToAdd: number): GameSta
     dynasties: state.dynasties,
     dynastyBonus: state.dynastyBonus,
     unlockedAchievements: state.unlockedAchievements,
-    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
+    nounsServed: state.nounsServed,
+    popupsClaimed: state.popupsClaimed,
   }
 }
 
@@ -914,7 +960,8 @@ export function resetForEmpire(state: GameState, bonusToAdd: number): GameState 
     dynasties: state.dynasties,
     dynastyBonus: state.dynastyBonus,
     unlockedAchievements: state.unlockedAchievements,
-    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
+    nounsServed: state.nounsServed,
+    popupsClaimed: state.popupsClaimed,
   }
 }
 
@@ -931,7 +978,8 @@ export function resetForDynasty(state: GameState, bonusToAdd: number): GameState
     dynasties: state.dynasties + 1,
     dynastyBonus: state.dynastyBonus + bonusToAdd,
     unlockedAchievements: state.unlockedAchievements,
-    nounsServed: state.nounsServed,  // ⌐◨-◨ Preserve Nouns progress
+    nounsServed: state.nounsServed,
+    popupsClaimed: state.popupsClaimed,
   }
 }
 
@@ -1180,4 +1228,159 @@ export function createChallengeState(state: GameState): ChallengeState {
     dateKey: getTodayKey(),
     claimed: false,
   }
+}
+
+// ============================================
+// POP-UP COLLABS (Golden Cookie equivalent)
+// ============================================
+
+// Pick a random collab based on rarity weights
+function pickRandomCollab(): PopupCollab {
+  const roll = Math.random()
+  let pool: PopupCollab[]
+
+  if (roll < 0.1) {
+    // 10% legendary
+    pool = POPUP_COLLABS.filter(c => c.rarity === 'legendary')
+  } else if (roll < 0.4) {
+    // 30% rare
+    pool = POPUP_COLLABS.filter(c => c.rarity === 'rare')
+  } else {
+    // 60% common
+    pool = POPUP_COLLABS.filter(c => c.rarity === 'common')
+  }
+
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+// Check if it's time to spawn a new popup
+export function shouldSpawnPopup(state: GameState): boolean {
+  // Don't spawn if one is already active
+  if (state.activePopup) return false
+
+  // Random interval between min and max
+  const timeSinceLastPopup = Date.now() - state.lastPopupTime
+  const nextInterval = POPUP_MIN_INTERVAL + Math.random() * (POPUP_MAX_INTERVAL - POPUP_MIN_INTERVAL)
+
+  return timeSinceLastPopup >= nextInterval
+}
+
+// Spawn a new popup
+export function spawnPopup(state: GameState): GameState {
+  const collab = pickRandomCollab()
+  const now = Date.now()
+
+  // Random position (avoid edges)
+  const x = 15 + Math.random() * 70  // 15-85%
+  const y = 20 + Math.random() * 40  // 20-60%
+
+  return {
+    ...state,
+    activePopup: {
+      collab,
+      spawnedAt: now,
+      expiresAt: now + POPUP_DURATION,
+      x,
+      y,
+    },
+    lastPopupTime: now,
+  }
+}
+
+// Check if popup has expired
+export function checkPopupExpiry(state: GameState): GameState {
+  if (!state.activePopup) return state
+
+  if (Date.now() >= state.activePopup.expiresAt) {
+    return {
+      ...state,
+      activePopup: null,
+    }
+  }
+
+  return state
+}
+
+// Claim a popup - completes all active orders instantly!
+export function claimPopup(state: GameState): { newState: GameState; beansEarned: number; ordersCompleted: number } {
+  if (!state.activePopup) {
+    return { newState: state, beansEarned: 0, ordersCompleted: 0 }
+  }
+
+  const collab = state.activePopup.collab
+  let newState = { ...state }
+  let totalBeans = 0
+  let ordersCompleted = 0
+
+  // Complete current order if exists
+  if (newState.currentOrder) {
+    const order = newState.currentOrder
+    const beans = order.value
+    totalBeans += beans
+    ordersCompleted++
+
+    // Track drink made
+    const drinksMade = { ...newState.drinksMade }
+    drinksMade[order.drink] = (drinksMade[order.drink] || 0) + 1
+
+    // Track Noun if applicable
+    if (order.isNoun) {
+      newState.nounsServed = (newState.nounsServed || 0) + 1
+    }
+
+    newState = {
+      ...newState,
+      currentOrder: null,
+      drinksMade,
+      ordersCompleted: newState.ordersCompleted + 1,
+      totalOrdersCompleted: newState.totalOrdersCompleted + 1,
+    }
+  }
+
+  // Complete all barista orders
+  for (const order of newState.baristaOrders) {
+    const beans = order.value
+    totalBeans += beans
+    ordersCompleted++
+
+    // Track drink made
+    const drinksMade = { ...newState.drinksMade }
+    drinksMade[order.drink] = (drinksMade[order.drink] || 0) + 1
+
+    // Track Noun if applicable
+    if (order.isNoun) {
+      newState.nounsServed = (newState.nounsServed || 0) + 1
+    }
+
+    newState = {
+      ...newState,
+      drinksMade,
+      ordersCompleted: newState.ordersCompleted + 1,
+      totalOrdersCompleted: newState.totalOrdersCompleted + 1,
+    }
+  }
+  newState.baristaOrders = []
+
+  // Bonus based on rarity
+  let bonusMultiplier = 1
+  if (collab.rarity === 'rare') bonusMultiplier = 1.5
+  if (collab.rarity === 'legendary') bonusMultiplier = 2
+
+  // Minimum beans if no orders were active
+  if (totalBeans === 0) {
+    totalBeans = Math.floor(50 * bonusMultiplier * (1 + newState.franchises * 0.1))
+  } else {
+    totalBeans = Math.floor(totalBeans * bonusMultiplier)
+  }
+
+  newState = {
+    ...newState,
+    beans: newState.beans + totalBeans,
+    lifetimeBeans: newState.lifetimeBeans + totalBeans,
+    totalLifetimeBeans: newState.totalLifetimeBeans + totalBeans,
+    activePopup: null,
+    popupsClaimed: (newState.popupsClaimed || 0) + 1,
+  }
+
+  return { newState, beansEarned: totalBeans, ordersCompleted }
 }

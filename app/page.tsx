@@ -58,6 +58,12 @@ import {
   shouldResetChallenge,
   createChallengeState,
   getTodayKey,
+  shouldSpawnPopup,
+  spawnPopup,
+  checkPopupExpiry,
+  claimPopup,
+  ActivePopup,
+  POPUP_DURATION,
 } from '@/lib/game'
 import { NOUN_TOKEN_ADDRESS, BURN_ADDRESS, ERC20_ABI } from '@/lib/constants'
 
@@ -88,6 +94,7 @@ export default function Game() {
   const [customerLeft, setCustomerLeft] = useState<string | null>(null)  // Show when customer leaves angry
   const [screenShake, setScreenShake] = useState(false)  // Shake on wrong drink
   const [showConfetti, setShowConfetti] = useState(false)  // Celebrate on order complete
+  const [popupClaimed, setPopupClaimed] = useState<{ name: string; beans: number; orders: number } | null>(null)  // Popup claim notification
 
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -254,6 +261,10 @@ export default function Game() {
     if (parsed.nounsServed === undefined) parsed.nounsServed = 0
     // Auto-brew migration
     if (parsed.upgradeLevels.autoBrew === undefined) parsed.upgradeLevels.autoBrew = 0
+    // Pop-up collab migration
+    if (parsed.activePopup === undefined) parsed.activePopup = null
+    if (parsed.lastPopupTime === undefined) parsed.lastPopupTime = Date.now()
+    if (parsed.popupsClaimed === undefined) parsed.popupsClaimed = 0
     return parsed
   }
 
@@ -497,6 +508,12 @@ export default function Game() {
           }
         }
 
+        // Pop-up Collab spawning and expiry
+        updated = checkPopupExpiry(updated)
+        if (shouldSpawnPopup(updated)) {
+          updated = spawnPopup(updated)
+        }
+
         // Check achievements
         const newAchievements = checkNewAchievements(updated)
         if (newAchievements.length > 0) {
@@ -573,6 +590,31 @@ export default function Game() {
 
     setSelectedCustomer(null)
   }, [selectedCustomer, gameState, haptic])
+
+  // Pop-up Collab claim handler
+  const handleClaimPopup = useCallback(() => {
+    if (!gameState.activePopup) return
+
+    haptic('heavy')
+    setShowConfetti(true)
+    setTimeout(() => setShowConfetti(false), 1500)
+
+    const { newState, beansEarned, ordersCompleted } = claimPopup(gameState)
+
+    // Show notification
+    setPopupClaimed({
+      name: gameState.activePopup.collab.name,
+      beans: beansEarned,
+      orders: ordersCompleted,
+    })
+    setTimeout(() => setPopupClaimed(null), 3000)
+
+    // Track for session/challenges
+    setSessionBeans(prev => prev + beansEarned)
+    setSessionOrders(prev => prev + ordersCompleted)
+
+    setGameState(newState)
+  }, [gameState, haptic])
 
   // Tap handler - work on current order
   const handleTap = useCallback(() => {
@@ -802,6 +844,55 @@ export default function Game() {
               }}
             />
           ))}
+        </div>
+      )}
+
+      {/* Pop-up Collab - floating bonus button */}
+      {gameState.activePopup && (
+        <button
+          onClick={handleClaimPopup}
+          className={`fixed z-40 transform -translate-x-1/2 -translate-y-1/2
+            ${gameState.activePopup.collab.rarity === 'legendary'
+              ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 animate-pulse'
+              : gameState.activePopup.collab.rarity === 'rare'
+                ? 'bg-gradient-to-r from-blue-500 to-purple-500'
+                : 'bg-gradient-to-r from-emerald-500 to-teal-500'
+            }
+            px-4 py-3 rounded-2xl shadow-2xl border-2 border-white/30
+            hover:scale-110 active:scale-95 transition-transform cursor-pointer`}
+          style={{
+            left: `${gameState.activePopup.x}%`,
+            top: `${gameState.activePopup.y}%`,
+            animation: 'bounce 1s ease-in-out infinite, pulse 0.5s ease-in-out infinite',
+          }}
+        >
+          <div className="text-center">
+            <div className="text-2xl mb-1">{gameState.activePopup.collab.emoji}</div>
+            <div className="text-white font-bold text-sm whitespace-nowrap">
+              {gameState.activePopup.collab.name}
+            </div>
+            <div className="text-white/80 text-xs">TAP!</div>
+          </div>
+          {/* Countdown ring */}
+          <div
+            className="absolute inset-0 rounded-2xl border-4 border-white/50"
+            style={{
+              animation: `shrink ${POPUP_DURATION}ms linear forwards`,
+            }}
+          />
+        </button>
+      )}
+
+      {/* Pop-up claimed notification */}
+      {popupClaimed && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-bounce-in">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-3 rounded-xl shadow-xl">
+            <div className="font-bold text-center">{popupClaimed.name}</div>
+            <div className="text-center text-sm">
+              +{formatNumber(popupClaimed.beans)} beans
+              {popupClaimed.orders > 0 && ` • ${popupClaimed.orders} orders completed!`}
+            </div>
+          </div>
         </div>
       )}
 
