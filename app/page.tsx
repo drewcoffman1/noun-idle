@@ -119,6 +119,7 @@ export default function Game() {
   }, [])
   const customNamesRef = useRef<string[]>([])
   const lastCloudSaveRef = useRef<string>('')
+  const selectedCustomerIdRef = useRef<string | null>(null)
 
   const { address, isConnected } = useAccount()
   const { connect, connectors } = useConnect()
@@ -176,6 +177,11 @@ export default function Game() {
       })
       .catch(console.error)
   }, [])
+
+  // Sync selected customer ref for game loop access
+  useEffect(() => {
+    selectedCustomerIdRef.current = selectedCustomer?.id || null
+  }, [selectedCustomer])
 
   // Fetch leaderboard
   useEffect(() => {
@@ -374,12 +380,15 @@ export default function Game() {
         }
 
         // Tick patience for waiting customers (use updated.waitingCustomers to include new arrivals)
+        // Skip the selected customer - their patience is frozen while being served
         const patienceLossPerTick = 0.1  // Lose 0.1 patience per tick (100ms) = 1 per second
+        const selectedId = selectedCustomerIdRef.current
         let customersWhoLeft: string[] = []
         updated.waitingCustomers = updated.waitingCustomers
           .map(customer => ({
             ...customer,
-            patience: customer.patience - patienceLossPerTick,
+            // Freeze patience if this customer is being served
+            patience: customer.id === selectedId ? customer.patience : customer.patience - patienceLossPerTick,
           }))
           .filter(customer => {
             if (customer.patience <= 0) {
