@@ -408,7 +408,7 @@ export const UPGRADES: Upgrade[] = [
     baseNounCost: 2000,
     nounCostMultiplier: 1.15,
     maxLevel: 50,
-    getEffect: (level) => `${(5 + level * 3).toFixed(0)} work/sec`,
+    getEffect: (level) => `${(level * 0.3).toFixed(1)} work/sec`,
   },
   {
     id: 'tapPower',

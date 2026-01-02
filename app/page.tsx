@@ -497,9 +497,9 @@ export default function Game() {
         // AUTO-BREW: Your current order progresses automatically (tap = bonus speed)
         if (updated.currentOrder) {
           // No auto-brew without upgrade - you must tap!
-          // Coffee Training upgrade enables and increases auto-brew
+          // Coffee Training upgrade enables and increases auto-brew (slow - tapping is still king)
           const autoBrewLevel = prev.upgradeLevels.autoBrew || 0
-          const autoBrewSpeed = autoBrewLevel > 0 ? (autoBrewLevel * 0.4) : 0
+          const autoBrewSpeed = autoBrewLevel > 0 ? (autoBrewLevel * 0.03) : 0
           const newWorkDone = updated.currentOrder.workDone + autoBrewSpeed
 
           if (newWorkDone >= updated.currentOrder.workRequired) {
