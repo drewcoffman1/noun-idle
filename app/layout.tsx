@@ -15,13 +15,15 @@ export const metadata: Metadata = {
   other: {
     'fc:miniapp': JSON.stringify({
       version: '1',
-      image: 'https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg',
+      imageUrl: 'https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg',
       button: {
         title: 'Play Now',
         action: {
-          type: 'launch_frame',
+          type: 'launch_miniapp',
+          name: 'Noun Idle',
           url: appUrl,
-          splashBackgroundColor: '#171717',
+          splashImageUrl: 'https://imagedelivery.net/BXluQx4ige9GuW0Ia56BHw/3999f273-1831-4b00-4fc9-df110c314d00/original',
+          splashBackgroundColor: '#000000',
         },
       },
     }),
