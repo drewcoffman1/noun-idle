@@ -106,6 +106,7 @@ export interface GameState {
   waitingCustomers: WaitingCustomer[]  // Customers in line, no drink yet
   currentOrder: Order | null            // YOUR order being worked on
   baristaOrders: Order[]                // Orders baristas are working on
+  lastBaristaPickup?: number            // Timestamp of last barista pickup (for cooldown)
 
   // Legacy (for migration) - will be removed
   orderQueue?: Order[]

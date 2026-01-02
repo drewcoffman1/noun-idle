@@ -412,14 +412,32 @@ export default function Game() {
           let baristaOrders = [...(updated.baristaOrders || [])]
           let newWaitingCustomers = [...updated.waitingCustomers]
 
+          // VIP customer types that require manual service
+          const vipTypes = ['Noun', 'Celebrity', 'Royalty', 'Billionaire']
+
           // Baristas pick up new customers if they have capacity
           const availableBaristas = prev.baristas - baristaOrders.length
-          for (let i = 0; i < availableBaristas && newWaitingCustomers.length > 0; i++) {
-            // Take the first waiting customer (FIFO)
-            const customer = newWaitingCustomers.shift()!
-            // Barista always picks the right drink
-            const order = baristaServeCustomer(customer, prev)
-            baristaOrders.push(order)
+
+          // Barista cooldown: 1.5 seconds between each pickup
+          const lastBaristaPickup = prev.lastBaristaPickup || 0
+          const baristaCooldown = 1500 // 1.5 seconds
+          const canPickup = now - lastBaristaPickup >= baristaCooldown
+
+          if (canPickup && availableBaristas > 0) {
+            // Find eligible customers (not VIP, and waited at least 2.5s for player-first)
+            const playerFirstWindow = 2500 // 2.5 seconds
+            const eligibleIndex = newWaitingCustomers.findIndex(c =>
+              !vipTypes.includes(c.customerType) &&
+              !c.isNoun &&
+              (now - c.arrivedAt) >= playerFirstWindow
+            )
+
+            if (eligibleIndex !== -1) {
+              const customer = newWaitingCustomers.splice(eligibleIndex, 1)[0]
+              const order = baristaServeCustomer(customer, prev)
+              baristaOrders.push(order)
+              updated.lastBaristaPickup = now
+            }
           }
           updated.waitingCustomers = newWaitingCustomers
 
