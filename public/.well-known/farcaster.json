@@ -8,7 +8,11 @@
     "splashBackgroundColor": "#000000",
     "subtitle": "Grow a coffee empire",
     "description": "An idle clicker game that puts you in charge of serving coffees and growing Noun",
-    "primaryCategory": "games"
+    "primaryCategory": "games",
+    "ogImageUrl": "https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg",
+    "screenshotUrls": [
+      "https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg"
+    ]
   },
   "accountAssociation": {
     "header": "eyJmaWQiOjgwNjEwNywidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDVjRTkxOGUxZDg3RDY2OTc5OGM1OTdlMjQ5OThBNjlCYzAzOTBhODYifQ",
