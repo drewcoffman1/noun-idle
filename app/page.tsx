@@ -819,6 +819,7 @@ export default function Game() {
     try {
       await sdk.actions.composeCast({
         text: `☕ My Noun Coffee Stats:\n\n📦 ${formatNumber(gameState.totalOrdersCompleted)} orders\n🏪 ${gameState.franchises} franchises\n🌍 ${gameState.empires} empires\n👑 ${gameState.dynasties} dynasties\n\nBuild your coffee empire!`,
+        embeds: ['https://noun-idle.vercel.app/'],
       })
     } catch (e) {
       console.error('Failed to compose cast:', e)
