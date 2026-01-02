@@ -14,6 +14,22 @@
       "https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg"
     ]
   },
+  "miniapp": {
+    "name": "Noun Idle",
+    "version": "1",
+    "iconUrl": "https://imagedelivery.net/BXluQx4ige9GuW0Ia56BHw/3999f273-1831-4b00-4fc9-df110c314d00/original",
+    "homeUrl": "https://noun-idle.vercel.app/",
+    "splashImageUrl": "https://wrpcd.net/cdn-cgi/imagedelivery/BXluQx4ige9GuW0Ia56BHw/b1aa6dbb-345a-44da-136c-c5692a6d9500/original",
+    "splashBackgroundColor": "#000000",
+    "subtitle": "Grow a coffee empire",
+    "description": "An idle clicker game that puts you in charge of serving coffees and growing Noun",
+    "primaryCategory": "games",
+    "tags": ["idle", "clicker", "coffee", "nouns"],
+    "ogImageUrl": "https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg",
+    "screenshotUrls": [
+      "https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg"
+    ]
+  },
   "accountAssociation": {
     "header": "eyJmaWQiOjgwNjEwNywidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDVjRTkxOGUxZDg3RDY2OTc5OGM1OTdlMjQ5OThBNjlCYzAzOTBhODYifQ",
     "payload": "eyJkb21haW4iOiJub3VuLWlkbGUudmVyY2VsLmFwcCJ9",
