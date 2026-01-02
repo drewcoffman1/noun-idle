@@ -1138,7 +1138,17 @@ export default function Game() {
           {isConnected ? (
             <div>
               <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 rounded-lg px-3 py-1.5">
-                <div className="text-xs text-amber-400/80">$NOUN</div>
+                <div className="text-xs text-amber-400/80 flex justify-between items-center">
+                  <span>$NOUN</span>
+                  <a
+                    href={`https://app.uniswap.org/swap?outputCurrency=${NOUN_TOKEN_ADDRESS}&chain=base`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-amber-500/60 hover:text-amber-400 text-[10px]"
+                  >
+                    Buy ↗
+                  </a>
+                </div>
                 <div className="text-lg font-bold text-amber-300">{formattedNounBalance}</div>
               </div>
               {saveStatus && (
@@ -1154,12 +1164,22 @@ export default function Game() {
               )}
             </div>
           ) : (
-            <button
-              onClick={() => connect({ connector: connectors[0] })}
-              className="bg-silver-800/50 border border-silver-600/50 rounded-lg px-3 py-2 text-sm text-silver-300"
-            >
-              Connect
-            </button>
+            <div className="flex gap-2">
+              <a
+                href={`https://app.uniswap.org/swap?outputCurrency=${NOUN_TOKEN_ADDRESS}&chain=base`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-silver-800/50 border border-silver-600/50 rounded-lg px-3 py-2 text-sm text-silver-400 hover:text-silver-300"
+              >
+                Buy $NOUN
+              </a>
+              <button
+                onClick={() => connect({ connector: connectors[0] })}
+                className="bg-silver-800/50 border border-silver-600/50 rounded-lg px-3 py-2 text-sm text-silver-300"
+              >
+                Connect
+              </button>
+            </div>
           )}
         </div>
       </div>
