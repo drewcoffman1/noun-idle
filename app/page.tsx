@@ -555,6 +555,36 @@ export default function Game() {
     autoConnect()
   }, [isConnected, connect, connectors])
 
+  // Save immediately when app is closing/hidden (important for mini-apps)
+  useEffect(() => {
+    const saveNow = () => {
+      const saveData = { ...gameState, lastUpdate: Date.now() }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData))
+
+      // Also try cloud save if connected (using sendBeacon for reliability)
+      if (address) {
+        const blob = new Blob([JSON.stringify({ address, gameState: saveData })], { type: 'application/json' })
+        navigator.sendBeacon('/api/save', blob)
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveNow()
+      }
+    }
+
+    window.addEventListener('pagehide', saveNow)
+    window.addEventListener('beforeunload', saveNow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pagehide', saveNow)
+      window.removeEventListener('beforeunload', saveNow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [gameState, address])
+
   // Handle tapping a waiting customer to start serving them
   const handleSelectCustomer = useCallback((customer: WaitingCustomer) => {
     if (gameState.currentOrder) return  // Already working on an order
