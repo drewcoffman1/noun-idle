@@ -442,7 +442,7 @@ export default function Game() {
           updated.waitingCustomers = newWaitingCustomers
 
           // Baristas work on their orders
-          const workPerBarista = effectiveness * 0.2  // Work per tick per barista
+          const workPerBarista = effectiveness * 0.05  // Work per tick per barista (slow - baristas are helpers, not replacements)
           const completedOrders: Order[] = []
 
           baristaOrders = baristaOrders.map(order => {
