@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Noun Idle',
     description: 'An idle coffee shop game. Tap to brew, earn beans, spend $NOUN!',
-    images: [`${appUrl}/og-image.svg`],
+    images: ['https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg'],
   },
   other: {
     'fc:miniapp': JSON.stringify({
       version: '1',
-      image: `${appUrl}/og-image.svg`,
+      image: 'https://pbs.twimg.com/media/G9dQ6iCaYAAvQP3?format=jpg',
       button: {
         title: 'Play Now',
         action: {
